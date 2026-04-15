@@ -1,0 +1,45 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+*.egg
+.venv/
+venv/
+env/
+
+# Secrets & credentials
+data/llm_config.json
+
+# Generated outputs & portfolio state
+outputs/
+!outputs/.gitkeep
+
+# Large data files
+data/qlib_cn/
+data/*.db
+data/*.sqlite3
+data/*.sqlite
+
+# OS
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# Logs
+*.log

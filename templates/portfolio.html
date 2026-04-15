@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Portfolio Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+    <style>
+        * { box-sizing: border-box; }
+        body { font-family: Arial, sans-serif; margin: 0; background: #f5f7fb; color: #1f2937; }
+        .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+        .header-row { display: flex; align-items: center; justify-content: space-between; margin-bottom: 20px; gap: 12px; flex-wrap: wrap; }
+        .header-left { display: flex; align-items: center; gap: 12px; }
+        h1 { margin: 0; font-size: 22px; }
+        .btn { background: #f3f4f6; border: 1px solid #d1d5db; border-radius: 8px; padding: 6px 16px; font-size: 13px; font-weight: 700; cursor: pointer; color: #374151; text-decoration: none; display: inline-block; white-space: nowrap; }
+        .btn:hover { background: #e5e7eb; }
+        .tabs { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 2px solid #e5e7eb; }
+        .tab-btn { padding: 11px 28px; border: none; background: none; cursor: pointer; font-size: 15px; font-weight: 700; color: #6b7280; border-bottom: 3px solid transparent; margin-bottom: -2px; transition: color .15s; }
+        .tab-btn.active { color: #2563eb; border-bottom-color: #2563eb; }
+        .tab-btn:hover:not(.active) { color: #374151; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+        .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; margin-bottom: 20px; }
+        .card { background: #fff; border-radius: 12px; padding: 18px 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.07); }
+        .card-label { font-size: 11px; color: #9ca3af; font-weight: 700; text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 8px; }
+        .card-value { font-size: 24px; font-weight: 800; line-height: 1.1; }
+        .card-sub { font-size: 12px; color: #6b7280; margin-top: 4px; }
+        .pos { color: #dc2626; }
+        .neg { color: #16a34a; }
+        .neu { color: #374151; }
+        .panel { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 2px 12px rgba(0,0,0,0.07); margin-bottom: 20px; }
+        .panel-title { margin: 0 0 16px 0; font-size: 15px; font-weight: 700; color: #374151; }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; }
+        thead th { text-align: left; color: #9ca3af; font-weight: 700; font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em; padding: 0 12px 10px 12px; border-bottom: 2px solid #f3f4f6; }
+        tbody td { padding: 12px; border-bottom: 1px solid #f9fafb; vertical-align: middle; }
+        tbody tr:last-child td { border-bottom: none; }
+        tbody tr:hover td { background: #f9fafb; }
+        .badge { border-radius: 6px; padding: 3px 10px; font-size: 12px; font-weight: 700; display: inline-block; }
+        .badge-buy { background: #dcfce7; color: #16a34a; }
+        .badge-sell { background: #fee2e2; color: #dc2626; }
+        .badge-hold { background: #f3f4f6; color: #6b7280; }
+        .code-chip { background: #eef2ff; color: #4338ca; border-radius: 6px; padding: 2px 8px; font-size: 12px; font-family: monospace; font-weight: 700; }
+        .empty-state { text-align: center; color: #9ca3af; padding: 48px 0; font-size: 14px; }
+        .loading { text-align: center; color: #9ca3af; padding: 48px 0; font-size: 14px; }
+        .error-msg { color: #b91c1c; background: #fee2e2; padding: 14px; border-radius: 10px; margin-bottom: 16px; }
+        .chart-wrap { position: relative; height: 320px; }
+        .legend-row { display: flex; gap: 20px; margin-bottom: 12px; font-size: 12px; color: #6b7280; }
+        .legend-dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 4px; vertical-align: middle; }
+        .refresh-row { display: flex; align-items: center; gap: 10px; margin-bottom: 12px; font-size: 12px; color: #9ca3af; }
+        .refresh-btn { background: #eef2ff; border: none; border-radius: 6px; padding: 4px 12px; font-size: 12px; color: #4338ca; cursor: pointer; font-weight: 600; }
+        .refresh-btn:hover { background: #e0e7ff; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header-row">
+        <div class="header-left">
+            <a class="btn" href="/">← <span data-i18n="back">Back</span></a>
+            <h1 data-i18n="title">Portfolio Dashboard</h1>
+        </div>
+        <button class="btn" id="lang-toggle" onclick="toggleLang()">中文</button>
+    </div>
+
+    <div class="tabs">
+        <button class="tab-btn active" id="tab-paper-btn" onclick="switchTab('paper')" data-i18n="tab_paper">Paper Trading</button>
+        <button class="tab-btn" id="tab-live-btn" onclick="switchTab('live')" data-i18n="tab_live">Live Portfolio</button>
+    </div>
+
+    <div id="error-banner" class="error-msg" style="display:none;"></div>
+
+    <!-- ── Paper Tab ── -->
+    <div id="tab-paper" class="tab-content active">
+        <div id="paper-loading" class="loading"><span data-i18n="loading">Loading...</span></div>
+        <div id="paper-content" style="display:none;">
+            <div class="refresh-row">
+                <span data-i18n="prices_note">Prices refreshed from market data (last 30 days)</span>
+                <button class="refresh-btn" onclick="loadData()" data-i18n="refresh_btn">↻ Refresh</button>
+            </div>
+            <div class="cards" id="paper-cards"></div>
+            <div class="panel">
+                <h2 class="panel-title" data-i18n="positions">Positions</h2>
+                <div id="paper-positions-wrap"></div>
+            </div>
+            <div class="panel">
+                <h2 class="panel-title" data-i18n="history_chart">Trading History</h2>
+                <div class="legend-row" id="paper-legend"></div>
+                <div class="chart-wrap"><canvas id="paper-chart"></canvas></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ── Live Tab ── -->
+    <div id="tab-live" class="tab-content">
+        <div id="live-loading" class="loading"><span data-i18n="loading">Loading...</span></div>
+        <div id="live-content" style="display:none;">
+            <div class="refresh-row">
+                <span data-i18n="prices_note">Prices refreshed from market data (last 30 days)</span>
+                <button class="refresh-btn" onclick="loadData()" data-i18n="refresh_btn">↻ Refresh</button>
+            </div>
+            <div class="cards" id="live-cards"></div>
+            <div class="panel">
+                <h2 class="panel-title" data-i18n="positions">Positions</h2>
+                <div id="live-positions-wrap"></div>
+            </div>
+            <div class="panel">
+                <h2 class="panel-title" data-i18n="sync_chart">Equity Sync History</h2>
+                <div class="chart-wrap"><canvas id="live-chart"></canvas></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+const I18N = {
+    en: {
+        title: "Portfolio Dashboard",
+        back: "Back",
+        tab_paper: "Paper Trading",
+        tab_live: "Live Portfolio",
+        loading: "Loading data...",
+        prices_note: "Prices fetched from market (last 30 days)",
+        refresh_btn: "↻ Refresh",
+        positions: "Positions",
+        history_chart: "Trading History",
+        sync_chart: "Equity Sync History",
+        total_equity: "Total Equity",
+        total_return: "Total Return",
+        cash: "Available Cash",
+        realized_pnl: "Realized P&L",
+        col_symbol: "Symbol",
+        col_name: "Name",
+        col_shares: "Shares",
+        col_avg_price: "Avg Cost",
+        col_last_price: "Last Price",
+        col_market_value: "Market Value",
+        col_unrealized_pnl: "Unrealized P&L",
+        col_unrealized_pct: "Return",
+        no_positions: "No positions held",
+        no_history: "No trading history yet",
+        equity_label: "Equity (¥)",
+        legend_buy: "▲ Buy",
+        legend_sell: "▼ Sell",
+        legend_equity: "Equity curve",
+        initial_capital: "Initial capital",
+        lang_toggle: "中文",
+    },
+    zh: {
+        title: "持仓看板",
+        back: "返回",
+        tab_paper: "模拟盘",
+        tab_live: "实盘",
+        loading: "数据加载中...",
+        prices_note: "行情数据已刷新（近30天）",
+        refresh_btn: "↻ 刷新",
+        positions: "当前持仓",
+        history_chart: "交易历史曲线",
+        sync_chart: "资产同步历史曲线",
+        total_equity: "总资产",
+        total_return: "总收益率",
+        cash: "可用现金",
+        realized_pnl: "已实现盈亏",
+        col_symbol: "代码",
+        col_name: "名称",
+        col_shares: "持股数",
+        col_avg_price: "成本均价",
+        col_last_price: "最新价",
+        col_market_value: "市值",
+        col_unrealized_pnl: "浮动盈亏",
+        col_unrealized_pct: "收益率",
+        no_positions: "暂无持仓",
+        no_history: "暂无交易记录",
+        equity_label: "资产 (¥)",
+        legend_buy: "▲ 买入",
+        legend_sell: "▼ 卖出",
+        legend_equity: "资产曲线",
+        initial_capital: "初始资金",
+        lang_toggle: "English",
+    }
+};
+
+let currentLang = localStorage.getItem("lang") || "en";
+let portfolioData = null;
+let charts = { paper: null, live: null };
+
+function t(key) { return I18N[currentLang][key] ?? I18N.en[key] ?? key; }
+
+function applyLang(lang) {
+    document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+    document.querySelectorAll("[data-i18n]").forEach(el => {
+        const v = I18N[lang][el.getAttribute("data-i18n")];
+        if (v !== undefined) el.textContent = v;
+    });
+    document.getElementById("lang-toggle").textContent = I18N[lang].lang_toggle;
+    if (portfolioData) renderAll(portfolioData);
+}
+
+function toggleLang() {
+    currentLang = currentLang === "en" ? "zh" : "en";
+    localStorage.setItem("lang", currentLang);
+    applyLang(currentLang);
+}
+
+function switchTab(name) {
+    ["paper", "live"].forEach(n => {
+        document.getElementById("tab-" + n).classList.toggle("active", n === name);
+        document.getElementById("tab-" + n + "-btn").classList.toggle("active", n === name);
+    });
+}
+
+function fmt(n, decimals = 2) {
+    if (typeof n !== "number") return n;
+    return n.toLocaleString("zh-CN", { minimumFractionDigits: decimals, maximumFractionDigits: decimals });
+}
+
+function colorClass(n) { return n > 0 ? "pos" : n < 0 ? "neg" : "neu"; }
+function sign(n) { return n > 0 ? "+" : ""; }
+
+function renderCards(mode, data) {
+    const el = document.getElementById(mode + "-cards");
+    const retPct = data.total_return_pct;
+    el.innerHTML = `
+        <div class="card">
+            <div class="card-label">${t("total_equity")}</div>
+            <div class="card-value neu">¥${fmt(data.total_equity)}</div>
+            <div class="card-sub">${t("initial_capital")}: ¥${fmt(data.initial_equity)}</div>
+        </div>
+        <div class="card">
+            <div class="card-label">${t("total_return")}</div>
+            <div class="card-value ${colorClass(retPct)}">${sign(retPct)}${fmt(retPct)}%</div>
+            <div class="card-sub">${sign(data.total_equity - data.initial_equity)}¥${fmt(data.total_equity - data.initial_equity)}</div>
+        </div>
+        <div class="card">
+            <div class="card-label">${t("cash")}</div>
+            <div class="card-value neu">¥${fmt(data.cash)}</div>
+        </div>
+        <div class="card">
+            <div class="card-label">${t("realized_pnl")}</div>
+            <div class="card-value ${colorClass(data.realized_pnl)}">${sign(data.realized_pnl)}¥${fmt(data.realized_pnl)}</div>
+        </div>
+    `;
+}
+
+function renderPositions(mode, positions) {
+    const wrap = document.getElementById(mode + "-positions-wrap");
+    const keys = Object.keys(positions);
+    if (keys.length === 0) {
+        wrap.innerHTML = `<div class="empty-state">${t("no_positions")}</div>`;
+        return;
+    }
+    let html = `<table><thead><tr>
+        <th>${t("col_symbol")}</th>
+        <th>${t("col_name")}</th>
+        <th style="text-align:right">${t("col_shares")}</th>
+        <th style="text-align:right">${t("col_avg_price")}</th>
+        <th style="text-align:right">${t("col_last_price")}</th>
+        <th style="text-align:right">${t("col_market_value")}</th>
+        <th style="text-align:right">${t("col_unrealized_pnl")}</th>
+        <th style="text-align:right">${t("col_unrealized_pct")}</th>
+    </tr></thead><tbody>`;
+    for (const sym of keys) {
+        const p = positions[sym];
+        const cc = colorClass(p.unrealized_pnl);
+        html += `<tr>
+            <td><span class="code-chip">${sym}</span></td>
+            <td><strong>${p.name}</strong></td>
+            <td style="text-align:right">${p.shares.toLocaleString()}</td>
+            <td style="text-align:right">¥${fmt(p.avg_price, 4)}</td>
+            <td style="text-align:right">¥${fmt(p.last_price, 4)}</td>
+            <td style="text-align:right">¥${fmt(p.market_value)}</td>
+            <td style="text-align:right" class="${cc}">${sign(p.unrealized_pnl)}¥${fmt(p.unrealized_pnl)}</td>
+            <td style="text-align:right" class="${cc}">${sign(p.unrealized_pct)}${fmt(p.unrealized_pct)}%</td>
+        </tr>`;
+    }
+    html += "</tbody></table>";
+    wrap.innerHTML = html;
+}
+
+function renderChart(canvasId, equityCurve, mode) {
+    if (charts[mode]) { charts[mode].destroy(); charts[mode] = null; }
+    const canvas = document.getElementById(canvasId);
+    const wrap = canvas.parentNode;
+
+    // Clear any old empty-state div
+    wrap.querySelectorAll(".empty-state").forEach(e => e.remove());
+    canvas.style.display = "";
+
+    if (equityCurve.length === 0) {
+        canvas.style.display = "none";
+        const d = document.createElement("div");
+        d.className = "empty-state";
+        d.textContent = t("no_history");
+        wrap.appendChild(d);
+        return;
+    }
+
+    const labels = equityCurve.map(d => d.t ? d.t.replace("T", " ").slice(0, 16) : "");
+    const equityVals = equityCurve.map(d => d.equity);
+
+    const pointColors = equityCurve.map(d => {
+        if (d.status === "bought") return "#16a34a";
+        if (d.status === "sold")   return "#dc2626";
+        if (d.status === "initial") return "#94a3b8";
+        return "#2563eb";
+    });
+    const pointRadii = equityCurve.map(d =>
+        (d.status === "bought" || d.status === "sold") ? 9 : 4
+    );
+
+    const ctx = canvas.getContext("2d");
+    charts[mode] = new Chart(ctx, {
+        type: "line",
+        data: {
+            labels,
+            datasets: [{
+                label: t("equity_label"),
+                data: equityVals,
+                borderColor: "#2563eb",
+                backgroundColor: "rgba(37,99,235,0.07)",
+                fill: true,
+                tension: 0.25,
+                pointBackgroundColor: pointColors,
+                pointBorderColor: pointColors,
+                pointRadius: pointRadii,
+                pointHoverRadius: pointRadii.map(r => r + 2),
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        title: (items) => equityCurve[items[0].dataIndex].t || "",
+                        label: (item) => {
+                            const d = equityCurve[item.dataIndex];
+                            const lines = [`${t("equity_label")}: ¥${fmt(d.equity)}`];
+                            if (d.status === "bought")
+                                lines.push(`▲ BUY  ${d.symbol}  ${Math.abs(d.shares)} @ ¥${d.price}`);
+                            else if (d.status === "sold")
+                                lines.push(`▼ SELL  ${d.symbol}  ${Math.abs(d.shares)} @ ¥${d.price}`);
+                            else if (d.status === "sync")
+                                lines.push(`${d.symbol}  ${d.shares} shares @ ¥${d.price}`);
+                            return lines;
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: { ticks: { maxTicksLimit: 10, maxRotation: 30, font: { size: 11 } } },
+                y: {
+                    beginAtZero: false,
+                    ticks: {
+                        callback: v => "¥" + v.toLocaleString(),
+                        font: { size: 11 }
+                    }
+                }
+            }
+        }
+    });
+
+    // Render legend
+    const legendEl = document.getElementById(mode === "paper" ? "paper-legend" : null);
+    if (legendEl) {
+        legendEl.innerHTML = `
+            <span><span class="legend-dot" style="background:#2563eb"></span>${t("legend_equity")}</span>
+            <span><span class="legend-dot" style="background:#16a34a"></span>${t("legend_buy")}</span>
+            <span><span class="legend-dot" style="background:#dc2626"></span>${t("legend_sell")}</span>
+        `;
+    }
+}
+
+function renderAll(data) {
+    ["paper", "live"].forEach(mode => {
+        renderCards(mode, data[mode]);
+        renderPositions(mode, data[mode].positions);
+        renderChart(mode + "-chart", data[mode].equity_curve, mode);
+        document.getElementById(mode + "-loading").style.display = "none";
+        document.getElementById(mode + "-content").style.display = "block";
+    });
+}
+
+function loadData() {
+    ["paper", "live"].forEach(mode => {
+        document.getElementById(mode + "-loading").style.display = "block";
+        document.getElementById(mode + "-content").style.display = "none";
+    });
+    fetch("/api/portfolio-data")
+        .then(r => r.json())
+        .then(data => {
+            portfolioData = data;
+            renderAll(data);
+        })
+        .catch(err => {
+            ["paper", "live"].forEach(mode => {
+                document.getElementById(mode + "-loading").style.display = "none";
+            });
+            const banner = document.getElementById("error-banner");
+            banner.textContent = "Error loading data: " + err.message;
+            banner.style.display = "block";
+        });
+}
+
+applyLang(currentLang);
+loadData();
+</script>
+</body>
+</html>

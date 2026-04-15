@@ -1,0 +1,504 @@
+from __future__ import annotations
+
+import json
+import sqlite3
+from contextlib import closing
+from datetime import datetime
+from pathlib import Path
+
+from config import ToolkitConfig
+
+
+def _connect(config: ToolkitConfig) -> sqlite3.Connection:
+    config.ensure_directories()
+    conn = sqlite3.connect(config.trading_db_path)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+
+def ensure_storage(config: ToolkitConfig) -> None:
+    with closing(_connect(config)) as conn:
+        conn.executescript(
+            """
+            CREATE TABLE IF NOT EXISTS portfolio_state (
+                mode TEXT PRIMARY KEY,
+                initial_cash REAL NOT NULL,
+                initial_equity REAL NOT NULL,
+                cash REAL NOT NULL,
+                realized_pnl REAL NOT NULL,
+                updated_at TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS positions (
+                mode TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                shares INTEGER NOT NULL,
+                avg_price REAL NOT NULL,
+                updated_at TEXT NOT NULL,
+                PRIMARY KEY (mode, symbol)
+            );
+
+            CREATE TABLE IF NOT EXISTS paper_trades (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                action TEXT NOT NULL,
+                execution_price REAL NOT NULL,
+                shares_delta INTEGER NOT NULL,
+                cash_after REAL NOT NULL,
+                position_shares INTEGER NOT NULL,
+                position_avg_price REAL NOT NULL,
+                status TEXT NOT NULL,
+                strategy TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS live_syncs (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                shares INTEGER NOT NULL,
+                avg_price REAL NOT NULL,
+                cash REAL NOT NULL,
+                market_price REAL NOT NULL,
+                total_equity REAL NOT NULL,
+                unrealized_pnl REAL NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS live_orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                created_at TEXT NOT NULL,
+                symbol TEXT NOT NULL,
+                strategy TEXT NOT NULL,
+                recommended_action TEXT NOT NULL,
+                execution_price_reference REAL NOT NULL,
+                current_shares INTEGER NOT NULL,
+                current_avg_price REAL NOT NULL,
+                target_shares INTEGER NOT NULL,
+                order_shares_delta INTEGER NOT NULL,
+                available_cash REAL NOT NULL,
+                note TEXT NOT NULL,
+                rationale_json TEXT NOT NULL,
+                order_file TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS ta_analyses (
+                job_id TEXT PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                trade_date TEXT NOT NULL,
+                status TEXT NOT NULL DEFAULT 'pending',
+                decision TEXT,
+                reports_json TEXT,
+                error TEXT,
+                created_at TEXT NOT NULL,
+                completed_at TEXT
+            );
+            """
+        )
+        conn.commit()
+
+    _migrate_legacy_json(config, "paper")
+    _migrate_legacy_json(config, "live")
+
+
+def _state_path(config: ToolkitConfig, mode: str) -> Path:
+    if mode == "paper":
+        return config.paper_state_path
+    if mode == "live":
+        return config.live_state_path
+    raise ValueError(f"Unsupported mode: {mode}")
+
+
+def _migrate_legacy_json(config: ToolkitConfig, mode: str) -> None:
+    state_path = _state_path(config, mode)
+    if not state_path.exists():
+        return
+
+    with closing(_connect(config)) as conn:
+        row = conn.execute("SELECT 1 FROM portfolio_state WHERE mode = ?", (mode,)).fetchone()
+        if row:
+            return
+
+        payload = json.loads(state_path.read_text(encoding="utf-8"))
+        save_portfolio_state(
+            config=config,
+            mode=mode,
+            state={
+                "initial_cash": float(payload.get("initial_cash", config.default_paper_cash if mode == "paper" else 0.0)),
+                "initial_equity": float(
+                    payload.get(
+                        "initial_equity",
+                        payload.get("initial_cash", config.default_paper_cash if mode == "paper" else 0.0),
+                    )
+                ),
+                "cash": float(payload.get("cash", 0.0)),
+                "positions": payload.get("positions", {}),
+                "realized_pnl": float(payload.get("realized_pnl", 0.0)),
+            },
+        )
+
+        if mode == "paper":
+            for trade in payload.get("trade_history", []):
+                conn.execute(
+                    """
+                    INSERT INTO paper_trades (
+                        timestamp, symbol, action, execution_price, shares_delta, cash_after,
+                        position_shares, position_avg_price, status, strategy
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        trade.get("timestamp", ""),
+                        trade.get("symbol", ""),
+                        trade.get("action", ""),
+                        float(trade.get("execution_price", 0.0)),
+                        int(trade.get("shares_delta", 0)),
+                        float(trade.get("cash_after", 0.0)),
+                        int(trade.get("position_after", {}).get("shares", 0)),
+                        float(trade.get("position_after", {}).get("avg_price", 0.0)),
+                        trade.get("status", ""),
+                        trade.get("strategy", ""),
+                    ),
+                )
+        else:
+            for sync in payload.get("sync_history", []):
+                total_equity = round(float(sync.get("cash", 0.0)) + int(sync.get("shares", 0)) * float(sync.get("market_price", 0.0)), 2)
+                unrealized_pnl = round((float(sync.get("market_price", 0.0)) - float(sync.get("avg_price", 0.0))) * int(sync.get("shares", 0)), 2)
+                conn.execute(
+                    """
+                    INSERT INTO live_syncs (
+                        timestamp, symbol, shares, avg_price, cash, market_price, total_equity, unrealized_pnl
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        sync.get("timestamp", ""),
+                        sync.get("symbol", ""),
+                        int(sync.get("shares", 0)),
+                        float(sync.get("avg_price", 0.0)),
+                        float(sync.get("cash", 0.0)),
+                        float(sync.get("market_price", 0.0)),
+                        total_equity,
+                        unrealized_pnl,
+                    ),
+                )
+        conn.commit()
+
+
+def save_portfolio_state(config: ToolkitConfig, mode: str, state: dict) -> None:
+    updated_at = datetime.now().isoformat(timespec="seconds")
+    positions = state.get("positions", {})
+    with closing(_connect(config)) as conn:
+        conn.execute(
+            """
+            INSERT INTO portfolio_state (mode, initial_cash, initial_equity, cash, realized_pnl, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(mode) DO UPDATE SET
+                initial_cash = excluded.initial_cash,
+                initial_equity = excluded.initial_equity,
+                cash = excluded.cash,
+                realized_pnl = excluded.realized_pnl,
+                updated_at = excluded.updated_at
+            """,
+            (
+                mode,
+                float(state.get("initial_cash", 0.0)),
+                float(state.get("initial_equity", state.get("initial_cash", 0.0))),
+                float(state.get("cash", 0.0)),
+                float(state.get("realized_pnl", 0.0)),
+                updated_at,
+            ),
+        )
+        conn.execute("DELETE FROM positions WHERE mode = ?", (mode,))
+        for symbol, position in positions.items():
+            conn.execute(
+                """
+                INSERT INTO positions (mode, symbol, shares, avg_price, updated_at)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (
+                    mode,
+                    symbol,
+                    int(position.get("shares", 0)),
+                    float(position.get("avg_price", 0.0)),
+                    updated_at,
+                ),
+            )
+        conn.commit()
+
+
+def _load_positions(conn: sqlite3.Connection, mode: str) -> dict:
+    rows = conn.execute(
+        "SELECT symbol, shares, avg_price FROM positions WHERE mode = ? ORDER BY symbol",
+        (mode,),
+    ).fetchall()
+    return {
+        row["symbol"]: {"shares": int(row["shares"]), "avg_price": float(row["avg_price"])}
+        for row in rows
+    }
+
+
+def _load_history(conn: sqlite3.Connection, mode: str) -> list[dict]:
+    if mode == "paper":
+        rows = conn.execute(
+            """
+            SELECT timestamp, symbol, action, execution_price, shares_delta, cash_after,
+                   position_shares, position_avg_price, status, strategy
+            FROM paper_trades
+            ORDER BY id
+            """
+        ).fetchall()
+        return [
+            {
+                "timestamp": row["timestamp"],
+                "symbol": row["symbol"],
+                "action": row["action"],
+                "execution_price": float(row["execution_price"]),
+                "shares_delta": int(row["shares_delta"]),
+                "cash_after": float(row["cash_after"]),
+                "position_after": {
+                    "shares": int(row["position_shares"]),
+                    "avg_price": float(row["position_avg_price"]),
+                },
+                "status": row["status"],
+                "strategy": row["strategy"],
+            }
+            for row in rows
+        ]
+
+    rows = conn.execute(
+        """
+        SELECT timestamp, symbol, shares, avg_price, cash, market_price, total_equity, unrealized_pnl
+        FROM live_syncs
+        ORDER BY id
+        """
+    ).fetchall()
+    return [
+        {
+            "timestamp": row["timestamp"],
+            "symbol": row["symbol"],
+            "shares": int(row["shares"]),
+            "avg_price": float(row["avg_price"]),
+            "cash": float(row["cash"]),
+            "market_price": float(row["market_price"]),
+            "total_equity": float(row["total_equity"]),
+            "unrealized_pnl": float(row["unrealized_pnl"]),
+        }
+        for row in rows
+    ]
+
+
+def load_portfolio_state(config: ToolkitConfig, mode: str) -> dict:
+    ensure_storage(config)
+    with closing(_connect(config)) as conn:
+        row = conn.execute(
+            """
+            SELECT initial_cash, initial_equity, cash, realized_pnl
+            FROM portfolio_state
+            WHERE mode = ?
+            """,
+            (mode,),
+        ).fetchone()
+        if not row:
+            if mode == "paper":
+                return {
+                    "initial_cash": config.default_paper_cash,
+                    "cash": config.default_paper_cash,
+                    "positions": {},
+                    "trade_history": [],
+                    "realized_pnl": 0.0,
+                }
+            return {
+                "initial_cash": 0.0,
+                "initial_equity": 0.0,
+                "cash": config.default_paper_cash,
+                "positions": {},
+                "sync_history": [],
+                "realized_pnl": 0.0,
+            }
+
+        history_key = "trade_history" if mode == "paper" else "sync_history"
+        initial_cash = float(row["initial_cash"])
+        initial_equity = float(row["initial_equity"])
+        if mode == "paper" and initial_cash <= 0:
+            initial_cash = config.default_paper_cash
+        if mode == "paper" and initial_equity <= 0:
+            initial_equity = initial_cash
+        return {
+            "initial_cash": initial_cash,
+            "initial_equity": initial_equity,
+            "cash": float(row["cash"]),
+            "positions": _load_positions(conn, mode),
+            "realized_pnl": float(row["realized_pnl"]),
+            history_key: _load_history(conn, mode),
+        }
+
+
+def record_paper_trade(config: ToolkitConfig, trade: dict) -> None:
+    ensure_storage(config)
+    with closing(_connect(config)) as conn:
+        conn.execute(
+            """
+            INSERT INTO paper_trades (
+                timestamp, symbol, action, execution_price, shares_delta, cash_after,
+                position_shares, position_avg_price, status, strategy
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                trade["timestamp"],
+                trade["symbol"],
+                trade["action"],
+                float(trade["execution_price"]),
+                int(trade["shares_delta"]),
+                float(trade["cash_after"]),
+                int(trade["position_after"]["shares"]),
+                float(trade["position_after"]["avg_price"]),
+                trade["status"],
+                trade["strategy"],
+            ),
+        )
+        conn.commit()
+
+
+def record_live_sync(config: ToolkitConfig, sync: dict) -> None:
+    ensure_storage(config)
+    with closing(_connect(config)) as conn:
+        conn.execute(
+            """
+            INSERT INTO live_syncs (
+                timestamp, symbol, shares, avg_price, cash, market_price, total_equity, unrealized_pnl
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                sync["timestamp"],
+                sync["symbol"],
+                int(sync["shares"]),
+                float(sync["avg_price"]),
+                float(sync["cash"]),
+                float(sync["market_price"]),
+                float(sync["total_equity"]),
+                float(sync["unrealized_pnl"]),
+            ),
+        )
+        conn.commit()
+
+
+def save_ta_job(config: ToolkitConfig, job_id: str, symbol: str, trade_date: str) -> None:
+    ensure_storage(config)
+    created_at = datetime.now().isoformat(timespec="seconds")
+    with closing(_connect(config)) as conn:
+        conn.execute(
+            """
+            INSERT INTO ta_analyses (job_id, symbol, trade_date, status, created_at)
+            VALUES (?, ?, ?, 'pending', ?)
+            """,
+            (job_id, symbol, trade_date, created_at),
+        )
+        conn.commit()
+
+
+def update_ta_job(
+    config: ToolkitConfig,
+    job_id: str,
+    status: str,
+    decision: str | None = None,
+    reports: dict | None = None,
+    error: str | None = None,
+) -> None:
+    ensure_storage(config)
+    completed_at = datetime.now().isoformat(timespec="seconds") if status in ("done", "failed") else None
+    with closing(_connect(config)) as conn:
+        conn.execute(
+            """
+            UPDATE ta_analyses
+            SET status = ?,
+                decision = COALESCE(?, decision),
+                reports_json = COALESCE(?, reports_json),
+                error = COALESCE(?, error),
+                completed_at = COALESCE(?, completed_at)
+            WHERE job_id = ?
+            """,
+            (
+                status,
+                decision,
+                json.dumps(reports, ensure_ascii=False) if reports is not None else None,
+                error,
+                completed_at,
+                job_id,
+            ),
+        )
+        conn.commit()
+
+
+def load_ta_job(config: ToolkitConfig, job_id: str) -> dict | None:
+    ensure_storage(config)
+    with closing(_connect(config)) as conn:
+        row = conn.execute(
+            "SELECT job_id, symbol, trade_date, status, decision, reports_json, error, created_at, completed_at "
+            "FROM ta_analyses WHERE job_id = ?",
+            (job_id,),
+        ).fetchone()
+    if not row:
+        return None
+    return _ta_row_to_dict(row)
+
+
+def get_latest_ta_analysis(config: ToolkitConfig, symbol: str) -> dict | None:
+    ensure_storage(config)
+    with closing(_connect(config)) as conn:
+        row = conn.execute(
+            "SELECT job_id, symbol, trade_date, status, decision, reports_json, error, created_at, completed_at "
+            "FROM ta_analyses WHERE symbol = ? AND status = 'done' "
+            "ORDER BY completed_at DESC LIMIT 1",
+            (symbol,),
+        ).fetchone()
+    if not row:
+        return None
+    return _ta_row_to_dict(row)
+
+
+def _ta_row_to_dict(row: sqlite3.Row) -> dict:
+    reports = None
+    if row["reports_json"]:
+        try:
+            reports = json.loads(row["reports_json"])
+        except Exception:
+            reports = {}
+    return {
+        "job_id":       row["job_id"],
+        "symbol":       row["symbol"],
+        "trade_date":   row["trade_date"],
+        "status":       row["status"],
+        "decision":     row["decision"],
+        "reports":      reports,
+        "error":        row["error"],
+        "created_at":   row["created_at"],
+        "completed_at": row["completed_at"],
+    }
+
+
+def record_live_order(config: ToolkitConfig, order: dict, order_file: str) -> None:
+    ensure_storage(config)
+    with closing(_connect(config)) as conn:
+        conn.execute(
+            """
+            INSERT INTO live_orders (
+                created_at, symbol, strategy, recommended_action, execution_price_reference,
+                current_shares, current_avg_price, target_shares, order_shares_delta,
+                available_cash, note, rationale_json, order_file
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                order["created_at"],
+                order["symbol"],
+                order["strategy"],
+                order["recommended_action"],
+                float(order["execution_price_reference"]),
+                int(order["current_shares"]),
+                float(order["current_avg_price"]),
+                int(order["target_shares"]),
+                int(order["order_shares_delta"]),
+                float(order["available_cash"]),
+                order["note"],
+                json.dumps(order.get("rationale", []), ensure_ascii=False),
+                order_file,
+            ),
+        )
+        conn.commit()

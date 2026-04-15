@@ -1,0 +1,364 @@
+"""TradingAgents integration service — async background jobs with SQLite persistence."""
+from __future__ import annotations
+
+import os
+import threading
+import uuid
+from contextlib import contextmanager
+from datetime import date
+from typing import TYPE_CHECKING
+
+from config import ToolkitConfig
+from llm_service import load_llm_config, _get_proxy_url  # reuse proxy detection
+
+if TYPE_CHECKING:
+    pass
+
+_lock = threading.Lock()
+# Cache TradingAgentsGraph instances keyed by (provider, model) so we reuse them
+_ta_instances: dict[str, object] = {}
+
+
+# ---------------------------------------------------------------------------
+# Proxy helpers
+# ---------------------------------------------------------------------------
+
+@contextmanager
+def _proxy_env():
+    """Temporarily restore system proxy env vars for the duration of a block.
+
+    akshare clears HTTP_PROXY / HTTPS_PROXY on import.  This context manager
+    re-injects them so yfinance (used by TradingAgents) can reach Yahoo Finance
+    through a corporate proxy.
+    """
+    proxy_url = _get_proxy_url()
+    if not proxy_url:
+        yield
+        return
+
+    original = {
+        k: os.environ.get(k)
+        for k in ("HTTP_PROXY", "HTTPS_PROXY", "http_proxy", "https_proxy")
+    }
+    try:
+        os.environ["HTTP_PROXY"]  = proxy_url
+        os.environ["HTTPS_PROXY"] = proxy_url
+        os.environ["http_proxy"]  = proxy_url
+        os.environ["https_proxy"] = proxy_url
+        yield
+    finally:
+        for k, v in original.items():
+            if v is None:
+                os.environ.pop(k, None)
+            else:
+                os.environ[k] = v
+
+
+def _check_llm_reachable(llm_cfg: dict) -> str | None:
+    """Return an error string if the configured LLM is not reachable/usable, else None."""
+    import requests
+    import urllib3
+    urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+
+    provider = llm_cfg.get("provider", "Ollama").lower()
+    base_url = llm_cfg.get("base_url", "").rstrip("/") or "https://api.openai.com"
+    api_key  = llm_cfg.get("api_key", "").strip()
+    model    = llm_cfg.get("model", "")
+
+    is_local = any(h in base_url for h in ("localhost", "127.0.0.1", "::1"))
+
+    if is_local or provider == "ollama":
+        url = base_url or "http://localhost:11434"
+        try:
+            requests.get(url, timeout=4, proxies={"http": None, "https": None})
+            return None
+        except requests.exceptions.ConnectionError:
+            return (
+                f"Ollama is not running at {url}. "
+                "Please start it: ollama serve"
+            )
+        except requests.exceptions.Timeout:
+            return f"Ollama did not respond at {url} (timeout 4s)."
+
+    # For remote APIs: check key present then do a quick models/chat probe
+    if not api_key:
+        return (
+            f"No API key configured for '{llm_cfg.get('provider')}'. "
+            "Add one in ⚙ Settings."
+        )
+
+    # Quick probe: POST a minimal chat request (1 token max)
+    proxy_url = _get_proxy_url()
+    proxies = {"http": proxy_url, "https": proxy_url} if proxy_url else {}
+    headers = {"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"}
+    probe_url = f"{base_url}/v1/chat/completions"
+    probe_body = {
+        "model": model or "gpt-4o-mini",
+        "messages": [{"role": "user", "content": "hi"}],
+        "max_tokens": 1,
+    }
+    try:
+        resp = requests.post(probe_url, json=probe_body, headers=headers,
+                             proxies=proxies, verify=False, timeout=10)
+        if resp.status_code in (200, 201):
+            return None
+        data = resp.json() if resp.content else {}
+        err_msg = (data.get("error") or {}).get("message", resp.text[:200])
+        code = (data.get("error") or {}).get("code", "")
+        if resp.status_code == 429 or code == "insufficient_quota":
+            return f"OpenAI quota exceeded — please check your billing at platform.openai.com."
+        if resp.status_code == 401:
+            return f"API key rejected (401). Please update it in ⚙ Settings."
+        return f"LLM API error {resp.status_code}: {err_msg}"
+    except requests.exceptions.Timeout:
+        return f"LLM API timed out at {probe_url}. Check network/proxy."
+    except requests.exceptions.ConnectionError as e:
+        return f"Cannot reach LLM API at {base_url}. Check URL in ⚙ Settings."
+    except Exception as e:
+        return f"LLM pre-flight failed: {e}"
+
+
+# ---------------------------------------------------------------------------
+# Ticker mapping: bare A-stock code → yfinance format
+# ---------------------------------------------------------------------------
+
+def to_yfinance_ticker(symbol: str) -> str:
+    """Map an A-stock code to yfinance ticker format.
+
+    Examples:
+        601169  → 601169.SS   (Shanghai)
+        000651  → 000651.SZ   (Shenzhen)
+        SH601169 → 601169.SS
+        SZ000651 → 000651.SZ
+    """
+    code = symbol.upper().strip()
+    if code.startswith("SH"):
+        return code[2:] + ".SS"
+    if code.startswith("SZ"):
+        return code[2:] + ".SZ"
+    # Already formatted
+    if code.endswith(".SS") or code.endswith(".SZ"):
+        return code
+    # Auto-detect by first digit
+    if len(code) == 6 and code.isdigit():
+        if code[0] == "6":
+            return code + ".SS"
+        if code[0] in ("0", "1", "2", "3"):
+            return code + ".SZ"
+        # 4xxxxx, 5xxxxx, 8xxxxx, 9xxxxx → treat as SH
+        return code + ".SS"
+    # Non-Chinese ticker (e.g. AAPL) — pass through unchanged
+    return symbol
+
+
+# ---------------------------------------------------------------------------
+# Config mapping: Kronos llm_config.json → TradingAgents config dict
+# ---------------------------------------------------------------------------
+
+_PROVIDER_MAP = {
+    "ollama":    "ollama",
+    "openai":    "openai",
+    "deepseek":  "openai",   # OpenAI-compatible endpoint
+    "qwen":      "openai",   # DashScope OpenAI-compatible
+    "azure":     "azure",
+    "anthropic": "anthropic",
+    "google":    "google",
+    "custom":    "openai",
+}
+
+_DEFAULT_BACKENDS = {
+    "deepseek": "https://api.deepseek.com/v1",
+    "qwen":     "https://dashscope.aliyuncs.com/compatible-mode/v1",
+}
+
+
+def _build_ta_config(llm_cfg: dict) -> dict:
+    """Map Kronos llm_config.json settings to a TradingAgents config dict."""
+    from tradingagents.default_config import DEFAULT_CONFIG
+
+    cfg = DEFAULT_CONFIG.copy()
+    cfg["data_vendors"] = DEFAULT_CONFIG["data_vendors"].copy()
+
+    provider_raw = llm_cfg.get("provider", "Ollama").lower()
+    ta_provider  = _PROVIDER_MAP.get(provider_raw, "openai")
+    model        = llm_cfg.get("model", "qwen2.5:7b")
+    base_url     = llm_cfg.get("base_url", "").rstrip("/")
+    api_key      = llm_cfg.get("api_key", "").strip()
+
+    cfg["llm_provider"]    = ta_provider
+    cfg["deep_think_llm"]  = model
+    cfg["quick_think_llm"] = model
+    cfg["max_debate_rounds"]       = 1
+    cfg["max_risk_discuss_rounds"] = 1
+    cfg["output_language"] = "English"
+
+    # Set backend URL
+    if ta_provider == "ollama":
+        cfg["backend_url"] = base_url or "http://localhost:11434"
+    elif base_url and "openai.com" not in base_url:
+        cfg["backend_url"] = base_url
+    elif provider_raw in _DEFAULT_BACKENDS:
+        cfg["backend_url"] = _DEFAULT_BACKENDS[provider_raw]
+
+    # Inject API key into environment so LangChain picks it up
+    if api_key:
+        env_map = {
+            "openai":    "OPENAI_API_KEY",
+            "anthropic": "ANTHROPIC_API_KEY",
+            "google":    "GOOGLE_API_KEY",
+            "azure":     "AZURE_OPENAI_API_KEY",
+        }
+        env_key = env_map.get(ta_provider)
+        if env_key:
+            os.environ[env_key] = api_key
+        # Also set a generic key for OpenAI-compatible endpoints
+        if ta_provider == "openai":
+            os.environ["OPENAI_API_KEY"] = api_key
+
+    return cfg
+
+
+def _instance_key(cfg: dict) -> str:
+    return f"{cfg['llm_provider']}:{cfg['deep_think_llm']}:{cfg.get('backend_url','')}"
+
+
+# ---------------------------------------------------------------------------
+# Background worker
+# ---------------------------------------------------------------------------
+
+def _run_job(job_id: str, symbol: str, trade_date: str, config: ToolkitConfig) -> None:
+    """Execute a TradingAgents analysis in a background thread."""
+    from trade_storage import update_ta_job
+    from tradingagents.graph.trading_graph import TradingAgentsGraph
+
+    try:
+        update_ta_job(config, job_id, status="running")
+
+        llm_cfg = load_llm_config()
+
+        # Pre-flight: verify LLM is reachable before spinning up the whole graph
+        llm_err = _check_llm_reachable(llm_cfg)
+        if llm_err:
+            update_ta_job(config, job_id, status="failed", error=llm_err)
+            return
+
+        ta_cfg = _build_ta_config(llm_cfg)
+        ticker = to_yfinance_ticker(symbol)
+
+        with _lock:
+            key = _instance_key(ta_cfg)
+            if key not in _ta_instances:
+                _ta_instances[key] = TradingAgentsGraph(debug=False, config=ta_cfg)
+            ta: TradingAgentsGraph = _ta_instances[key]
+
+        # Restore proxy env vars so yfinance can reach Yahoo Finance
+        # (akshare clears HTTP_PROXY/HTTPS_PROXY on import)
+        with _proxy_env():
+            final_state, decision = ta.propagate(ticker, trade_date)
+
+        reports = {
+            "market_report":        final_state.get("market_report", ""),
+            "sentiment_report":     final_state.get("sentiment_report", ""),
+            "news_report":          final_state.get("news_report", ""),
+            "fundamentals_report":  final_state.get("fundamentals_report", ""),
+            "investment_plan":      final_state.get("investment_plan", ""),
+            "trader_plan":          final_state.get("trader_investment_plan", ""),
+            "final_decision":       final_state.get("final_trade_decision", ""),
+            "debate_judge":         (final_state.get("investment_debate_state") or {}).get("judge_decision", ""),
+            "risk_judge":           (final_state.get("risk_debate_state") or {}).get("judge_decision", ""),
+        }
+
+        update_ta_job(config, job_id, status="done", decision=decision, reports=reports)
+
+    except Exception as exc:
+        from trade_storage import update_ta_job as _utj
+        _utj(config, job_id, status="failed", error=str(exc))
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+def submit_job(config: ToolkitConfig, symbol: str, trade_date: str | None = None) -> str:
+    """Fire a TradingAgents analysis job in the background. Returns job_id."""
+    from trade_storage import save_ta_job
+
+    if not trade_date:
+        trade_date = date.today().isoformat()
+
+    job_id = uuid.uuid4().hex[:8]
+    save_ta_job(config, job_id, symbol, trade_date)
+
+    thread = threading.Thread(
+        target=_run_job,
+        args=(job_id, symbol, trade_date, config),
+        daemon=True,
+        name=f"ta-{job_id}",
+    )
+    thread.start()
+    return job_id
+
+
+def get_job(config: ToolkitConfig, job_id: str) -> dict | None:
+    """Load a TA job's status and result from SQLite."""
+    from trade_storage import load_ta_job
+    return load_ta_job(config, job_id)
+
+
+def get_latest(config: ToolkitConfig, symbol: str) -> dict | None:
+    """Return the most recent completed TA analysis for a symbol."""
+    from trade_storage import get_latest_ta_analysis
+    return get_latest_ta_analysis(config, symbol)
+
+
+def reflect(config: ToolkitConfig, realized_pnl_pct: float) -> None:
+    """Notify all cached TradingAgentsGraph instances of a trade outcome."""
+    with _lock:
+        for instance in _ta_instances.values():
+            if hasattr(instance, "reflect_and_remember"):
+                try:
+                    instance.reflect_and_remember(realized_pnl_pct)
+                except Exception:
+                    pass
+
+
+def build_consensus(kronos_action: str, ta_decision: str) -> dict:
+    """Merge a Kronos BUY/SELL/HOLD signal with a TradingAgents 5-tier decision.
+
+    Returns a dict with: signal, label, confidence, description.
+    """
+    ta = ta_decision.upper().strip()
+    kr = kronos_action.upper().strip()
+
+    # Normalise TA to 3 tiers
+    if ta in ("BUY", "OVERWEIGHT"):
+        ta3 = "BUY"
+    elif ta in ("SELL", "UNDERWEIGHT"):
+        ta3 = "SELL"
+    else:
+        ta3 = "HOLD"
+
+    if kr == ta3 == "BUY":
+        return {"signal": "STRONG_BUY",  "label": "✅ Strong BUY",  "confidence": "high",
+                "description": "Both Kronos quant forecast and AI agents agree: buy."}
+    if kr == ta3 == "SELL":
+        return {"signal": "STRONG_SELL", "label": "🔴 Strong SELL", "confidence": "high",
+                "description": "Both Kronos and AI agents agree: sell / exit."}
+    if kr == ta3 == "HOLD":
+        return {"signal": "HOLD",        "label": "⏸ Hold",         "confidence": "medium",
+                "description": "Both models suggest holding current position."}
+    if kr == "BUY" and ta3 == "HOLD":
+        return {"signal": "LEAN_BUY",    "label": "📈 Lean BUY",    "confidence": "low",
+                "description": "Kronos forecasts upside; AI agents are neutral — proceed cautiously."}
+    if kr == "SELL" and ta3 == "HOLD":
+        return {"signal": "LEAN_SELL",   "label": "📉 Lean SELL",   "confidence": "low",
+                "description": "Kronos signals exit; AI agents are neutral — consider reducing."}
+    if kr == "HOLD" and ta3 == "BUY":
+        return {"signal": "LEAN_BUY",    "label": "📈 Lean BUY",    "confidence": "low",
+                "description": "AI agents are bullish; Kronos is neutral — watch for entry."}
+    if kr == "HOLD" and ta3 == "SELL":
+        return {"signal": "LEAN_SELL",   "label": "📉 Lean SELL",   "confidence": "low",
+                "description": "AI agents flag risk; Kronos is neutral — reduce exposure."}
+    # Outright conflict
+    return {"signal": "CONFLICT",        "label": "⚠️ Conflict",    "confidence": "none",
+            "description": f"Kronos says {kr} but AI agents say {ta_decision} — do not trade blindly."}

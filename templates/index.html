@@ -1,0 +1,1577 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Kronos + Qlib Toolkit</title>
+    <script src="/static/echarts.min.js"></script>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            margin: 0;
+            background: #f5f7fb;
+            color: #1f2937;
+        }
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            padding: 24px;
+        }
+        .header-row {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 4px;
+        }
+        h1 {
+            margin: 0;
+        }
+        .subtitle {
+            margin-top: 0;
+            color: #6b7280;
+        }
+        .lang-btn {
+            background: #f3f4f6;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            padding: 6px 16px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            color: #374151;
+            white-space: nowrap;
+            flex-shrink: 0;
+            display: inline-block;
+            text-decoration: none;
+        }
+        .lang-btn:hover {
+            background: #e5e7eb;
+        }
+        .panel {
+            background: #ffffff;
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 6px 24px rgba(15, 23, 42, 0.08);
+            margin-bottom: 20px;
+        }
+        form {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 14px;
+        }
+        label {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+            font-size: 14px;
+            font-weight: 600;
+        }
+        input, select, button {
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            padding: 10px 12px;
+            font-size: 14px;
+        }
+        button[type="submit"] {
+            background: #2563eb;
+            color: #ffffff;
+            border: none;
+            cursor: pointer;
+            font-weight: 700;
+        }
+        button[type="submit"]:hover {
+            background: #1d4ed8;
+        }
+        .full-row {
+            grid-column: 1 / -1;
+        }
+        .error {
+            color: #b91c1c;
+            background: #fee2e2;
+            padding: 12px;
+            border-radius: 8px;
+        }
+        .results {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
+        }
+        .metrics {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        .metrics td {
+            padding: 8px 0;
+            border-bottom: 1px solid #e5e7eb;
+            vertical-align: top;
+        }
+        .metrics td:first-child {
+            color: #6b7280;
+            width: 52%;
+        }
+        .links a {
+            display: inline-block;
+            margin-right: 12px;
+            margin-bottom: 8px;
+            color: #2563eb;
+            text-decoration: none;
+        }
+        .links a:hover {
+            text-decoration: underline;
+        }
+        img {
+            max-width: 100%;
+            border-radius: 12px;
+            border: 1px solid #e5e7eb;
+        }
+        code {
+            background: #eef2ff;
+            padding: 2px 6px;
+            border-radius: 6px;
+        }
+        .quote-panel {
+            background: #ffffff;
+            border-radius: 12px;
+            padding: 16px 20px;
+            box-shadow: 0 6px 24px rgba(15, 23, 42, 0.08);
+            margin-bottom: 20px;
+        }
+        .quote-panel.up   { border-left: 4px solid #dc2626; }
+        .quote-panel.down { border-left: 4px solid #16a34a; }
+        .quote-panel.flat { border-left: 4px solid #9ca3af; }
+        .quote-top {
+            display: flex;
+            align-items: baseline;
+            flex-wrap: wrap;
+            gap: 10px 20px;
+            margin-bottom: 10px;
+        }
+        .quote-name { font-size: 16px; font-weight: 700; color: #1f2937; }
+        .quote-code { font-size: 12px; color: #9ca3af; background: #f3f4f6; border-radius: 6px; padding: 2px 8px; }
+        .quote-price { font-size: 32px; font-weight: 800; line-height: 1; }
+        .quote-change { font-size: 16px; font-weight: 700; }
+        .quote-metrics {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px 24px;
+            font-size: 13px;
+            color: #374151;
+        }
+        .quote-metric span:first-child { color: #9ca3af; margin-right: 4px; }
+        .quote-footer {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-top: 10px;
+            font-size: 12px;
+            color: #9ca3af;
+        }
+        .quote-refresh-btn {
+            background: #eef2ff;
+            border: none;
+            border-radius: 6px;
+            padding: 4px 12px;
+            font-size: 12px;
+            color: #4338ca;
+            cursor: pointer;
+            font-weight: 600;
+        }
+        .quote-refresh-btn:hover { background: #e0e7ff; }
+        .quote-up   { color: #dc2626; }
+        .quote-down { color: #16a34a; }
+        .quote-flat { color: #6b7280; }
+
+        /* K-line chart */
+        .kline-wrap {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+            margin-bottom: 20px;
+            padding: 16px 16px 8px;
+            display: none;
+        }
+        .kline-wrap.visible { display: block; }
+        .kline-toolbar {
+            display: flex;
+            gap: 6px;
+            flex-wrap: wrap;
+            margin-bottom: 10px;
+            align-items: center;
+        }
+        .kline-toolbar span {
+            font-size: 13px;
+            color: #6b7280;
+            margin-right: 4px;
+        }
+        .kline-btn {
+            padding: 3px 12px;
+            border-radius: 6px;
+            border: 1px solid #e5e7eb;
+            background: #f9fafb;
+            font-size: 12px;
+            cursor: pointer;
+            color: #374151;
+            font-weight: 500;
+            transition: all .15s;
+        }
+        .kline-btn:hover { background: #e0e7ff; border-color: #a5b4fc; color: #4338ca; }
+        .kline-btn.active { background: #4338ca; color: #fff; border-color: #4338ca; }
+        #kline-chart { width: 100%; height: 420px; }
+
+        /* T+0 AI Analysis Panel */
+        .t0-wrap {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 1px 4px rgba(0,0,0,0.07);
+            margin-bottom: 20px;
+            padding: 16px;
+            display: none;
+        }
+        .t0-wrap.visible { display: block; }
+        .t0-header {
+            display: flex; align-items: center; justify-content: space-between;
+            flex-wrap: wrap; gap: 8px; margin-bottom: 14px;
+        }
+        .t0-title { font-weight: 700; font-size: 15px; color: #1f2937; }
+        .t0-signal {
+            font-size: 14px; font-weight: 700; padding: 4px 14px;
+            border-radius: 20px; background: #f3f4f6;
+        }
+        .t0-signal.buy  { background: #fee2e2; color: #991b1b; }
+        .t0-signal.sell { background: #dcfce7; color: #166534; }
+        .t0-signal.hold { background: #fef9c3; color: #854d0e; }
+        .t0-indicators {
+            display: grid;
+            grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+            gap: 8px; margin-bottom: 14px;
+        }
+        .t0-card {
+            background: #f9fafb; border-radius: 8px; padding: 8px 10px;
+            border: 1px solid #e5e7eb;
+        }
+        .t0-card-label { font-size: 11px; color: #9ca3af; margin-bottom: 2px; }
+        .t0-card-value { font-size: 14px; font-weight: 600; color: #1f2937; }
+        .t0-card-value.up   { color: #dc2626; }
+        .t0-card-value.down { color: #16a34a; }
+        .t0-reasons { font-size: 12px; color: #6b7280; margin-bottom: 12px; }
+        .t0-ai-box {
+            background: #f8faff; border-radius: 8px; padding: 12px 14px;
+            border: 1px solid #e0e7ff; min-height: 80px;
+            font-size: 13px; line-height: 1.7; color: #1f2937; white-space: pre-wrap;
+        }
+        .t0-actions {
+            display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; align-items: center;
+        }
+        .t0-btn {
+            padding: 6px 16px; border-radius: 8px; border: none;
+            font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity .15s;
+        }
+        .t0-btn:hover { opacity: .85; }
+        .t0-btn-primary { background: #4338ca; color: #fff; }
+        .t0-btn-secondary { background: #f3f4f6; color: #374151; border: 1px solid #e5e7eb; }
+        .t0-btn-gear { background: none; border: none; font-size: 18px; cursor: pointer; color: #6b7280; padding: 0 4px; }
+        .t0-auto-label { font-size: 12px; color: #6b7280; display: flex; align-items: center; gap: 4px; }
+
+        /* Settings Modal */
+        .modal-backdrop {
+            display: none; position: fixed; inset: 0;
+            background: rgba(0,0,0,0.4); z-index: 1000; align-items: center; justify-content: center;
+        }
+        .modal-backdrop.open { display: flex; }
+        .modal {
+            background: #fff; border-radius: 14px; padding: 24px;
+            width: min(480px, 90vw); box-shadow: 0 8px 32px rgba(0,0,0,0.18);
+        }
+        .modal h3 { margin: 0 0 16px; font-size: 17px; }
+        .modal label { display: block; margin-bottom: 12px; font-size: 13px; color: #374151; }
+        .modal label span { display: block; margin-bottom: 4px; font-weight: 600; }
+        .modal input, .modal select {
+            width: 100%; box-sizing: border-box; padding: 7px 10px;
+            border: 1px solid #d1d5db; border-radius: 7px; font-size: 13px;
+        }
+        .modal-footer { display: flex; justify-content: flex-end; gap: 8px; margin-top: 18px; }
+
+        /* ── AI Agent Analysis Panel ──────────────────────────────────── */
+        .ta-wrap {
+            background: #fff;
+            border-radius: 12px;
+            box-shadow: 0 6px 24px rgba(15,23,42,0.08);
+            margin-bottom: 20px;
+            padding: 20px;
+        }
+        .ta-header {
+            display: flex; align-items: center; justify-content: space-between;
+            flex-wrap: wrap; gap: 10px; margin-bottom: 16px;
+        }
+        .ta-title { font-size: 16px; font-weight: 700; color: #1f2937; }
+        .ta-controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+        .ta-symbol-input {
+            border: 1px solid #d1d5db; border-radius: 8px; padding: 7px 12px;
+            font-size: 13px; width: 100px;
+        }
+        .ta-date-input {
+            border: 1px solid #d1d5db; border-radius: 8px; padding: 7px 12px;
+            font-size: 13px; width: 130px;
+        }
+        .ta-launch-btn {
+            background: #7c3aed; color: #fff; border: none;
+            border-radius: 8px; padding: 8px 18px; font-size: 13px;
+            font-weight: 700; cursor: pointer; white-space: nowrap;
+        }
+        .ta-launch-btn:hover { background: #6d28d9; }
+        .ta-launch-btn:disabled { background: #a78bfa; cursor: not-allowed; }
+        .ta-latest-btn {
+            background: #f3f4f6; color: #374151; border: 1px solid #e5e7eb;
+            border-radius: 8px; padding: 7px 14px; font-size: 13px;
+            font-weight: 600; cursor: pointer;
+        }
+        .ta-latest-btn:hover { background: #e5e7eb; }
+
+        /* Status bar */
+        .ta-status-bar {
+            display: flex; align-items: center; gap: 10px;
+            padding: 10px 14px; border-radius: 8px; margin-bottom: 14px;
+            background: #f9fafb; border: 1px solid #e5e7eb; font-size: 13px;
+        }
+        .ta-status-bar.running { background: #eff6ff; border-color: #bfdbfe; }
+        .ta-status-bar.done    { background: #f0fdf4; border-color: #bbf7d0; }
+        .ta-status-bar.failed  { background: #fef2f2; border-color: #fecaca; }
+        .ta-spinner {
+            width: 14px; height: 14px; border: 2px solid #bfdbfe;
+            border-top-color: #2563eb; border-radius: 50%;
+            animation: ta-spin 0.7s linear infinite; flex-shrink: 0;
+        }
+        @keyframes ta-spin { to { transform: rotate(360deg); } }
+
+        /* Consensus badge */
+        .consensus-box {
+            padding: 14px 18px; border-radius: 10px; margin-bottom: 16px;
+            display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+        }
+        .consensus-box.high   { background: #f0fdf4; border: 1.5px solid #86efac; }
+        .consensus-box.medium { background: #fef9c3; border: 1.5px solid #fde047; }
+        .consensus-box.low    { background: #fff7ed; border: 1.5px solid #fdba74; }
+        .consensus-box.none   { background: #fef2f2; border: 1.5px solid #fca5a5; }
+        .consensus-signal { font-size: 20px; font-weight: 800; }
+        .consensus-meta { font-size: 12px; color: #6b7280; }
+        .consensus-pills { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 4px; }
+        .pill {
+            font-size: 11px; font-weight: 700; padding: 2px 10px;
+            border-radius: 20px; background: #e0e7ff; color: #3730a3;
+        }
+        .pill.buy  { background: #fee2e2; color: #991b1b; }
+        .pill.sell { background: #dcfce7; color: #166534; }
+        .pill.hold { background: #fef9c3; color: #854d0e; }
+
+        /* Agent report accordions */
+        .ta-reports { display: flex; flex-direction: column; gap: 8px; }
+        .ta-report {
+            border: 1px solid #e5e7eb; border-radius: 8px; overflow: hidden;
+        }
+        .ta-report-header {
+            padding: 10px 14px; font-size: 13px; font-weight: 600;
+            cursor: pointer; display: flex; justify-content: space-between;
+            align-items: center; background: #f9fafb; user-select: none;
+        }
+        .ta-report-header:hover { background: #f3f4f6; }
+        .ta-report-body {
+            display: none; padding: 12px 14px;
+            font-size: 13px; line-height: 1.7; color: #374151;
+            white-space: pre-wrap; border-top: 1px solid #e5e7eb;
+            max-height: 300px; overflow-y: auto;
+            background: #fafafa;
+        }
+        .ta-report-body.open { display: block; }
+        .ta-chevron { font-size: 11px; color: #9ca3af; transition: transform .2s; }
+        .ta-chevron.open { transform: rotate(180deg); }
+
+        .ta-empty { color: #9ca3af; font-size: 13px; font-style: italic; padding: 12px 0; }
+    </style>
+</head>
+<body>
+<div class="container">
+    <div class="header-row">
+        <h1 data-i18n="title">Kronos + Qlib Stock Analyzer</h1>
+        <div style="display:flex;gap:8px;align-items:center;">
+            <a href="/portfolio" class="lang-btn" data-i18n="portfolio_btn">Portfolio →</a>
+            <button class="lang-btn" id="lang-toggle" onclick="toggleLang()">中文</button>
+            <button class="t0-btn-gear" onclick="openSettings()" title="LLM Settings">⚙</button>
+        </div>
+    </div>
+    <p class="subtitle" data-i18n="subtitle">Enter a stock code to run forecast, backtest, paper trading, and manual live order export from the browser.</p>
+
+    <!-- Real-time Quote Panel -->
+    <div class="quote-panel flat" id="quote-panel">
+        <span style="color:#9ca3af;font-size:13px;" data-i18n="quote_hint">Enter a stock code above to load real-time quote.</span>
+    </div>
+
+    <!-- K-line Chart -->
+    <div class="kline-wrap" id="kline-wrap">
+        <div class="kline-toolbar">
+            <span data-i18n="kline_period">Period:</span>
+            <button class="kline-btn" data-period="5min"  onclick="switchKlinePeriod('5min',this)"  data-i18n="kline_5m">5分钟</button>
+            <button class="kline-btn" data-period="15min" onclick="switchKlinePeriod('15min',this)" data-i18n="kline_15m">15分钟</button>
+            <button class="kline-btn" data-period="30min" onclick="switchKlinePeriod('30min',this)" data-i18n="kline_30m">30分钟</button>
+            <button class="kline-btn" data-period="60min" onclick="switchKlinePeriod('60min',this)" data-i18n="kline_60m">60分钟</button>
+            <button class="kline-btn active" data-period="daily"   onclick="switchKlinePeriod('daily',this)"   data-i18n="kline_d">日K</button>
+            <button class="kline-btn" data-period="weekly"  onclick="switchKlinePeriod('weekly',this)"  data-i18n="kline_w">周K</button>
+            <button class="kline-btn" data-period="monthly" onclick="switchKlinePeriod('monthly',this)" data-i18n="kline_m">月K</button>
+        </div>
+        <div id="kline-chart"></div>
+    </div>
+
+    <!-- T+0 AI Analysis Panel -->
+    <div class="t0-wrap" id="t0-wrap">
+        <div class="t0-header">
+            <span class="t0-title" data-i18n="t0_title">📊 T+0 AI 实时分析</span>
+            <span class="t0-signal hold" id="t0-signal">— 等待数据</span>
+        </div>
+        <div class="t0-indicators" id="t0-indicators"></div>
+        <div class="t0-reasons" id="t0-reasons"></div>
+        <div class="t0-ai-box" id="t0-ai-box" data-i18n="t0_ai_hint">点击「AI 解读」获取智能分析建议</div>
+        <div class="t0-actions">
+            <button class="t0-btn t0-btn-primary" onclick="runT0Analysis()" data-i18n="t0_btn_ai">🤖 AI 解读</button>
+            <button id="t0-refresh-btn" class="t0-btn t0-btn-secondary" onclick="refreshT0Indicators(true)" data-i18n="t0_btn_refresh">↻ 刷新指标</button>
+            <label class="t0-auto-label">
+                <input type="checkbox" id="t0-auto" onchange="toggleT0Auto(this.checked)">
+                <span data-i18n="t0_auto">每分钟自动刷新</span>
+            </label>
+        </div>
+    </div>
+
+    <!-- LLM Settings Modal -->
+    <div class="modal-backdrop" id="settings-modal">
+        <div class="modal">
+            <h3 data-i18n="settings_title">⚙ LLM API 设置</h3>
+            <label><span data-i18n="settings_provider">服务商</span>
+                <select id="cfg-provider" onchange="onProviderChange(this.value)">
+                    <option value="Ollama">🏠 Ollama（本地，推荐）</option>
+                    <option value="DeepSeek">DeepSeek</option>
+                    <option value="OpenAI">OpenAI</option>
+                    <option value="Qwen">通义千问 (Qwen)</option>
+                    <option value="Custom">自定义</option>
+                </select>
+            </label>
+            <div id="ollama-hint" style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:8px 10px;font-size:12px;color:#713f12;margin:4px 0 8px;">
+                💡 <b>Ollama 本地部署（无需外网）：</b><br>
+                1. 下载安装：<b>https://ollama.com</b><br>
+                2. 启动：<code>ollama serve</code><br>
+                3. 拉取模型：<code>ollama pull qwen2.5:7b</code>
+            </div>
+            <label><span data-i18n="settings_base_url">API Base URL</span>
+                <input id="cfg-base-url" type="text" placeholder="http://localhost:11434">
+            </label>
+            <label><span data-i18n="settings_api_key">API Key（本地 Ollama 无需填写）</span>
+                <input id="cfg-api-key" type="password" placeholder="外部 API 才需要填写">
+            </label>
+            <label><span data-i18n="settings_model">模型</span>
+                <input id="cfg-model" type="text" placeholder="qwen2.5:7b">
+            </label>
+            <div class="modal-footer">
+                <button class="t0-btn t0-btn-secondary" onclick="closeSettings()" data-i18n="settings_cancel">取消</button>
+                <button class="t0-btn t0-btn-primary" onclick="saveSettings()" data-i18n="settings_save">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <form method="post">
+            <label><span data-i18n="stock_code">Stock Code</span>
+                <input id="symbol" type="text" name="symbol" value="{{ form.symbol }}" placeholder="601169 or SH601169" required>
+            </label>
+            <label><span data-i18n="label">Label</span>
+                <input id="label" type="text" name="label" value="{{ form.label }}" data-i18n-placeholder="label_placeholder">
+            </label>
+            <input id="label_auto" type="hidden" name="label_auto" value="{{ 'true' if form.label_auto else 'false' }}">
+            <label><span data-i18n="data_start">Data Start</span>
+                <input type="date" name="start" value="{{ form.start }}" required>
+            </label>
+            <label><span data-i18n="data_end">Data End</span>
+                <input type="date" name="end" value="{{ form.end }}" required>
+            </label>
+            <label><span data-i18n="lookback">Lookback</span>
+                <input type="number" name="lookback" min="60" value="{{ form.lookback }}" required>
+            </label>
+            <label><span data-i18n="forecast_horizon">Forecast Horizon</span>
+                <input type="number" name="pred_len" min="1" value="{{ form.pred_len }}" required>
+            </label>
+            <label><span data-i18n="backtest_horizon">Backtest Horizon</span>
+                <input type="number" name="backtest_pred_len" min="1" value="{{ form.backtest_pred_len }}" required>
+            </label>
+            <label><span data-i18n="rebalance_step">Rebalance Step</span>
+                <input type="number" name="rebalance_step" min="1" value="{{ form.rebalance_step }}" required>
+            </label>
+            <label><span data-i18n="signal_threshold">Signal Threshold</span>
+                <input type="number" name="signal_threshold" step="0.0001" value="{{ form.signal_threshold }}" required>
+            </label>
+            <label><span data-i18n="strategy">Strategy</span>
+                <select name="strategy">
+                    {% for option in strategy_options %}
+                    <option value="{{ option.key }}" {% if form.strategy == option.key %}selected{% endif %}>{{ option.label }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label><span data-i18n="source">Source</span>
+                <select name="source">
+                    {% for option in ["auto", "qlib", "akshare"] %}
+                    <option value="{{ option }}" {% if form.source == option %}selected{% endif %}>{{ option }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label><span data-i18n="device">Device</span>
+                <select name="device">
+                    {% for option in ["cpu", "cuda:0"] %}
+                    <option value="{{ option }}" {% if form.device == option %}selected{% endif %}>{{ option }}</option>
+                    {% endfor %}
+                </select>
+            </label>
+            <label><span data-i18n="live_shares">Live Current Shares</span>
+                <input type="number" name="live_current_shares" min="0" value="{{ form.live_current_shares }}" required>
+            </label>
+            <label><span data-i18n="live_avg_cost">Live Avg Cost</span>
+                <input type="number" name="live_avg_price" min="0" step="0.0001" value="{{ form.live_avg_price }}" required>
+            </label>
+            <label><span data-i18n="live_cash">Live Available Cash</span>
+                <input type="number" name="live_available_cash" min="0" step="0.01" value="{{ form.live_available_cash }}" required>
+            </label>
+            <div class="full-row">
+                <button type="submit" name="action" value="analyze" data-i18n="btn_analyze">Run Analysis</button>
+                <button type="submit" name="action" value="paper_trade" data-i18n="btn_paper">Run + Execute Paper Trade</button>
+                <button type="submit" name="action" value="live_export" data-i18n="btn_live">Run + Export Live Order</button>
+            </div>
+        </form>
+        <div class="full-row" style="margin-top: 14px;">
+            {% for option in strategy_options %}
+            <div style="margin-bottom: 6px;">
+                <strong>{{ option.label }}</strong> — {{ option.description }}
+            </div>
+            {% endfor %}
+        </div>
+    </div>
+
+    {% if error %}
+    <div class="panel error">{{ error }}</div>
+    {% endif %}
+
+    {% if result %}
+    <div class="results">
+        <div class="panel">
+            <h2 data-i18n="rec_action">Recommended Action</h2>
+            <table class="metrics">
+                {% for key, value in result.prediction.recommendation.items() %}
+                <tr>
+                    <td>{{ key }}</td>
+                    <td>
+                        {% if key == "rationale" %}
+                            {{ value|join("; ") }}
+                        {% else %}
+                            {{ value }}
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </table>
+        </div>
+
+        <div class="panel">
+            <h2 data-i18n="forecast_summary">Forecast Summary</h2>
+            <table class="metrics">
+                {% for key, value in result.prediction.summary.items() %}
+                <tr><td>{{ key }}</td><td>{{ value }}</td></tr>
+                {% endfor %}
+            </table>
+            <div class="links">
+                <a href="/outputs/{{ result.prediction.summary_file }}" target="_blank" data-i18n="link_summary_json">Summary JSON</a>
+                <a href="/outputs/{{ result.prediction.prediction_file }}" target="_blank" data-i18n="link_pred_csv">Prediction CSV</a>
+                <a href="/outputs/{{ result.prediction.history_file }}" target="_blank" data-i18n="link_hist_csv">History CSV</a>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2 data-i18n="backtest_summary">Backtest Summary</h2>
+            <table class="metrics">
+                {% for key, value in result.backtest.summary.items() %}
+                <tr><td>{{ key }}</td><td>{{ value }}</td></tr>
+                {% endfor %}
+            </table>
+            <div class="links">
+                <a href="/outputs/{{ result.backtest.summary_file }}" target="_blank" data-i18n="link_backtest_json">Backtest JSON</a>
+                <a href="/outputs/{{ result.backtest.trades_file }}" target="_blank" data-i18n="link_trades_csv">Trades CSV</a>
+                <a href="/outputs/{{ result.backtest.daily_file }}" target="_blank" data-i18n="link_daily_csv">Daily CSV</a>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2 data-i18n="paper_portfolio">Paper Portfolio</h2>
+            <table class="metrics">
+                {% for key, value in result.paper_portfolio.summary.items() %}
+                <tr>
+                    <td>{{ key }}</td>
+                    <td>
+                        {% if value is mapping %}
+                            {% for subkey, subvalue in value.items() %}
+                                <div><strong>{{ subkey }}</strong>: {{ subvalue }}</div>
+                            {% endfor %}
+                        {% else %}
+                            {{ value }}
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </table>
+            <div class="links">
+                <a href="/outputs/{{ result.paper_portfolio.state_file }}" target="_blank" data-i18n="link_paper_json">Paper Portfolio JSON</a>
+                <a href="/outputs/{{ result.paper_portfolio.database_file }}" target="_blank" data-i18n="link_db">Trading SQLite DB</a>
+            </div>
+        </div>
+
+        <div class="panel">
+            <h2 data-i18n="live_portfolio">Live Portfolio</h2>
+            <table class="metrics">
+                {% for key, value in result.live_portfolio.summary.items() %}
+                <tr>
+                    <td>{{ key }}</td>
+                    <td>
+                        {% if value is mapping %}
+                            {% for subkey, subvalue in value.items() %}
+                                <div><strong>{{ subkey }}</strong>: {{ subvalue }}</div>
+                            {% endfor %}
+                        {% else %}
+                            {{ value }}
+                        {% endif %}
+                    </td>
+                </tr>
+                {% endfor %}
+            </table>
+            <div class="links">
+                <a href="/outputs/{{ result.live_portfolio.state_file }}" target="_blank" data-i18n="link_live_json">Live Portfolio JSON</a>
+                <a href="/outputs/{{ result.live_portfolio.database_file }}" target="_blank" data-i18n="link_db">Trading SQLite DB</a>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <h2 data-i18n="forecast_chart">Forecast Chart</h2>
+        <img src="/outputs/{{ result.prediction.forecast_image }}" alt="Forecast chart">
+    </div>
+
+    {% if trade_result and trade_result.paper %}
+    <div class="panel">
+        <h2 data-i18n="paper_trade_result">Paper Trade Result</h2>
+        <table class="metrics">
+            {% for key, value in trade_result.paper.trade.items() %}
+            <tr><td>{{ key }}</td><td>{{ value }}</td></tr>
+            {% endfor %}
+        </table>
+        <h3 data-i18n="paper_after_trade">Paper Portfolio After Trade</h3>
+        <table class="metrics">
+            {% for key, value in trade_result.paper.portfolio.items() %}
+            <tr>
+                <td>{{ key }}</td>
+                <td>
+                    {% if value is mapping %}
+                        {% for subkey, subvalue in value.items() %}
+                            <div><strong>{{ subkey }}</strong>: {{ subvalue }}</div>
+                        {% endfor %}
+                    {% else %}
+                        {{ value }}
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+        <div class="links">
+            <a href="/outputs/paper_portfolio.json" target="_blank" data-i18n="link_paper_state">Paper Portfolio State</a>
+            <a href="/outputs/trading.sqlite3" target="_blank" data-i18n="link_db">Trading SQLite DB</a>
+        </div>
+    </div>
+    {% endif %}
+
+    {% if trade_result and trade_result.live %}
+    <div class="panel">
+        <h2 data-i18n="live_order_export">Manual Live Order Export</h2>
+        <table class="metrics">
+            {% for key, value in trade_result.live.order.items() %}
+            <tr>
+                <td>{{ key }}</td>
+                <td>
+                    {% if value is string or value is number %}
+                        {{ value }}
+                    {% elif value is sequence and value is not string %}
+                        {{ value|join("; ") }}
+                    {% else %}
+                        {{ value }}
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+        <h3 data-i18n="live_snapshot">Live Portfolio Snapshot</h3>
+        <table class="metrics">
+            {% for key, value in trade_result.live.portfolio.items() %}
+            <tr>
+                <td>{{ key }}</td>
+                <td>
+                    {% if value is mapping %}
+                        {% for subkey, subvalue in value.items() %}
+                            <div><strong>{{ subkey }}</strong>: {{ subvalue }}</div>
+                        {% endfor %}
+                    {% else %}
+                        {{ value }}
+                    {% endif %}
+                </td>
+            </tr>
+            {% endfor %}
+        </table>
+        <div class="links">
+            <a href="/outputs/{{ trade_result.live.order_file_relative }}" target="_blank" data-i18n="link_order_json">Order JSON</a>
+            <a href="/outputs/live_portfolio.json" target="_blank" data-i18n="link_live_state">Live Portfolio State</a>
+            <a href="/outputs/{{ trade_result.live.database_file_relative }}" target="_blank" data-i18n="link_db">Trading SQLite DB</a>
+        </div>
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="panel">
+        <strong data-i18n="tip_label">Tip:</strong> <span data-i18n="tip_body">APIs are available at <code>POST /api/analyze</code>, <code>/api/paper-trade</code>, and <code>/api/live-export</code>.</span>
+    </div>
+    {% endif %}
+</div>
+
+<!-- ── AI Multi-Agent Analysis Panel ─────────────────────────────────── -->
+<div class="container" style="padding-top:0;">
+<div class="ta-wrap" id="ta-wrap">
+    <div class="ta-header">
+        <span class="ta-title">🤖 AI Multi-Agent Analysis</span>
+        <div class="ta-controls">
+            <input class="ta-symbol-input" id="ta-symbol" type="text" placeholder="601169"
+                   value="{{ form.symbol }}">
+            <input class="ta-date-input" id="ta-date" type="date"
+                   value="{{ (now_date if now_date else '') }}">
+            <button class="ta-launch-btn" id="ta-launch-btn" onclick="launchTaAnalysis()">
+                ▶ Run Agents
+            </button>
+            <button class="ta-latest-btn" onclick="loadTaLatest()">
+                ↺ Load Latest
+            </button>
+        </div>
+    </div>
+
+    <!-- Status bar (hidden until job starts) -->
+    <div class="ta-status-bar" id="ta-status-bar" style="display:none;"></div>
+
+    <!-- Consensus verdict (hidden until result arrives) -->
+    <div id="ta-consensus" style="display:none;"></div>
+
+    <!-- Agent report accordions -->
+    <div class="ta-reports" id="ta-reports">
+        <div class="ta-empty">
+            Run agent analysis to see detailed AI reports from market analysts,
+            researcher debates, risk team assessment, and a final portfolio manager decision.
+        </div>
+    </div>
+</div>
+</div>
+
+<script>
+    const I18N = {
+        en: {
+            title: "Kronos + Qlib Stock Analyzer",
+            subtitle: "Enter a stock code to run forecast, backtest, paper trading, and manual live order export from the browser.",
+            stock_code: "Stock Code",
+            label: "Label",
+            label_placeholder: "Auto-fills from stock code by default",
+            data_start: "Data Start",
+            data_end: "Data End",
+            lookback: "Lookback",
+            forecast_horizon: "Forecast Horizon",
+            backtest_horizon: "Backtest Horizon",
+            rebalance_step: "Rebalance Step",
+            signal_threshold: "Signal Threshold",
+            strategy: "Strategy",
+            source: "Source",
+            device: "Device",
+            live_shares: "Live Current Shares",
+            live_avg_cost: "Live Avg Cost",
+            live_cash: "Live Available Cash",
+            btn_analyze: "Run Analysis",
+            btn_paper: "Run + Execute Paper Trade",
+            btn_live: "Run + Export Live Order",
+            rec_action: "Recommended Action",
+            forecast_summary: "Forecast Summary",
+            backtest_summary: "Backtest Summary",
+            paper_portfolio: "Paper Portfolio",
+            live_portfolio: "Live Portfolio",
+            forecast_chart: "Forecast Chart",
+            paper_trade_result: "Paper Trade Result",
+            paper_after_trade: "Paper Portfolio After Trade",
+            live_order_export: "Manual Live Order Export",
+            live_snapshot: "Live Portfolio Snapshot",
+            link_summary_json: "Summary JSON",
+            link_pred_csv: "Prediction CSV",
+            link_hist_csv: "History CSV",
+            link_backtest_json: "Backtest JSON",
+            link_trades_csv: "Trades CSV",
+            link_daily_csv: "Daily CSV",
+            link_paper_json: "Paper Portfolio JSON",
+            link_db: "Trading SQLite DB",
+            link_live_json: "Live Portfolio JSON",
+            link_paper_state: "Paper Portfolio State",
+            link_order_json: "Order JSON",
+            link_live_state: "Live Portfolio State",
+            tip_label: "Tip:",
+            tip_body: "APIs are available at <code>POST /api/analyze</code>, <code>/api/paper-trade</code>, and <code>/api/live-export</code>.",
+            portfolio_btn: "Portfolio →",
+            quote_hint: "Enter a stock code above to load real-time quote.",
+            quote_open: "Open",
+            quote_high: "High",
+            quote_low: "Low",
+            quote_prev: "Prev Close",
+            quote_vol: "Volume",
+            quote_amount: "Amount",
+            quote_turnover: "Turnover",
+            quote_pe: "P/E",
+            quote_updated: "Updated",
+            quote_refresh: "↻ Refresh",
+            quote_loading: "Loading quote...",
+            quote_error: "Quote unavailable",
+            lang_toggle: "中文",
+            kline_period: "Period:",
+            kline_5m: "5min", kline_15m: "15min", kline_30m: "30min", kline_60m: "60min",
+            kline_d: "Daily", kline_w: "Weekly", kline_m: "Monthly",
+            kline_loading: "Loading chart...", kline_error: "Chart data unavailable",
+            t0_title: "📊 T+0 AI Real-time Analysis",
+            t0_ai_hint: "Click 「AI Analysis」 to get intelligent T+0 trading advice",
+            t0_btn_ai: "🤖 AI Analysis", t0_btn_refresh: "↻ Refresh",
+            t0_auto: "Auto-refresh every minute",
+            settings_title: "⚙ LLM API Settings", settings_provider: "Provider",
+            settings_base_url: "API Base URL", settings_api_key: "API Key",
+            settings_model: "Model", settings_cancel: "Cancel", settings_save: "Save",
+        },
+        zh: {
+            title: "Kronos + Qlib 股票分析工具",
+            subtitle: "输入股票代码，在浏览器中运行预测、回测、模拟交易及实盘手动下单导出。",
+            stock_code: "股票代码",
+            label: "显示名称",
+            label_placeholder: "默认与股票代码相同",
+            data_start: "数据起始",
+            data_end: "数据结束",
+            lookback: "回溯天数",
+            forecast_horizon: "预测周期",
+            backtest_horizon: "回测周期",
+            rebalance_step: "调仓步长",
+            signal_threshold: "信号阈值",
+            strategy: "策略",
+            source: "数据源",
+            device: "运算设备",
+            live_shares: "实盘持股数量",
+            live_avg_cost: "实盘持仓均价",
+            live_cash: "实盘可用资金",
+            btn_analyze: "运行分析",
+            btn_paper: "运行 + 执行模拟交易",
+            btn_live: "运行 + 导出实盘订单",
+            rec_action: "推荐操作",
+            forecast_summary: "预测摘要",
+            backtest_summary: "回测摘要",
+            paper_portfolio: "模拟持仓",
+            live_portfolio: "实盘持仓",
+            forecast_chart: "预测走势图",
+            paper_trade_result: "模拟交易结果",
+            paper_after_trade: "交易后模拟持仓",
+            live_order_export: "实盘手动下单导出",
+            live_snapshot: "实盘持仓快照",
+            link_summary_json: "摘要 JSON",
+            link_pred_csv: "预测 CSV",
+            link_hist_csv: "历史 CSV",
+            link_backtest_json: "回测 JSON",
+            link_trades_csv: "交易记录 CSV",
+            link_daily_csv: "日度数据 CSV",
+            link_paper_json: "模拟持仓 JSON",
+            link_db: "交易数据库 SQLite",
+            link_live_json: "实盘持仓 JSON",
+            link_paper_state: "模拟持仓状态",
+            link_order_json: "订单 JSON",
+            link_live_state: "实盘持仓状态",
+            tip_label: "提示：",
+            tip_body: "REST 接口：<code>POST /api/analyze</code>、<code>/api/paper-trade</code>、<code>/api/live-export</code>。",
+            portfolio_btn: "持仓看板 →",
+            quote_hint: "在上方输入股票代码可加载实时行情。",
+            quote_open: "开盘",
+            quote_high: "最高",
+            quote_low: "最低",
+            quote_prev: "昨收",
+            quote_vol: "成交量",
+            quote_amount: "成交额",
+            quote_turnover: "换手率",
+            quote_pe: "市盈率",
+            quote_updated: "更新于",
+            quote_refresh: "↻ 刷新",
+            quote_loading: "行情加载中...",
+            quote_error: "行情获取失败",
+            lang_toggle: "English",
+            kline_period: "周期：",
+            kline_5m: "5分钟", kline_15m: "15分钟", kline_30m: "30分钟", kline_60m: "60分钟",
+            kline_d: "日K", kline_w: "周K", kline_m: "月K",
+            kline_loading: "图表加载中...", kline_error: "K线数据获取失败",
+            t0_title: "📊 T+0 AI 实时分析",
+            t0_ai_hint: "点击「AI 解读」获取智能分析建议",
+            t0_btn_ai: "🤖 AI 解读", t0_btn_refresh: "↻ 刷新指标",
+            t0_auto: "每分钟自动刷新",
+            settings_title: "⚙ LLM API 设置", settings_provider: "服务商",
+            settings_base_url: "API Base URL", settings_api_key: "API Key",
+            settings_model: "模型", settings_cancel: "取消", settings_save: "保存",
+        }
+    };
+
+    let currentLang = localStorage.getItem("lang") || "en";
+
+    function applyLang(lang) {
+        const t = I18N[lang];
+        document.documentElement.lang = lang === "zh" ? "zh-CN" : "en";
+
+        document.querySelectorAll("[data-i18n]").forEach(el => {
+            const key = el.getAttribute("data-i18n");
+            if (t[key] !== undefined) el.innerHTML = t[key];
+        });
+
+        document.querySelectorAll("[data-i18n-placeholder]").forEach(el => {
+            const key = el.getAttribute("data-i18n-placeholder");
+            if (t[key] !== undefined) el.placeholder = t[key];
+        });
+
+        document.getElementById("lang-toggle").textContent = t.lang_toggle;
+    }
+
+    function toggleLang() {
+        currentLang = currentLang === "en" ? "zh" : "en";
+        localStorage.setItem("lang", currentLang);
+        applyLang(currentLang);
+    }
+
+    applyLang(currentLang);
+
+    // ── Real-time Quote ──────────────────────────────────────────
+    var quoteTimer = null;
+
+    // ── K-line variables (var to avoid TDZ — hoisted unlike let) ──
+    var klineChart = null;
+    var klinePeriod = "daily";
+    var klineSymbol = "";
+
+    function fmtN(n, d = 2) {
+        if (n === null || n === undefined) return "—";
+        return Number(n).toLocaleString("zh-CN", { minimumFractionDigits: d, maximumFractionDigits: d });
+    }
+    function fmtVol(n) {
+        if (n === null || n === undefined) return "—";
+        if (n >= 1e8) return fmtN(n / 1e8, 2) + (currentLang === "zh" ? "亿" : "B");
+        if (n >= 1e4) return fmtN(n / 1e4, 2) + (currentLang === "zh" ? "万" : "W");
+        return fmtN(n, 0);
+    }
+
+    function renderQuote(q) {
+        const t = I18N[currentLang];
+        const pct = q.change_pct ?? 0;
+        const dir = pct > 0 ? "up" : pct < 0 ? "down" : "flat";
+        const dirClass = "quote-" + dir;
+        const arrow = pct > 0 ? "▲ " : pct < 0 ? "▼ " : "";
+        const sign  = pct > 0 ? "+" : "";
+        const now   = new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+        const panel = document.getElementById("quote-panel");
+        panel.className = "quote-panel " + dir;
+        panel.innerHTML = `
+            <div class="quote-top">
+                <span class="quote-name">${q.name}</span>
+                <span class="quote-code">${q.symbol}</span>
+                <span class="quote-price ${dirClass}">¥${fmtN(q.last_price, 2)}</span>
+                <span class="quote-change ${dirClass}">${arrow}${fmtN(q.change_amount, 2)}&nbsp;&nbsp;${sign}${fmtN(pct, 2)}%</span>
+            </div>
+            <div class="quote-metrics">
+                <div class="quote-metric"><span>${t.quote_open}</span>${fmtN(q.open)}</div>
+                <div class="quote-metric"><span>${t.quote_prev}</span>${fmtN(q.prev_close)}</div>
+                <div class="quote-metric"><span>${t.quote_high}</span><span class="quote-up">${fmtN(q.high)}</span></div>
+                <div class="quote-metric"><span>${t.quote_low}</span><span class="quote-down">${fmtN(q.low)}</span></div>
+                <div class="quote-metric"><span>${t.quote_vol}</span>${fmtVol(q.volume)}</div>
+                <div class="quote-metric"><span>${t.quote_amount}</span>${fmtVol(q.amount)}</div>
+            </div>
+            <div class="quote-footer">
+                <span>${q.is_realtime ? '🔴 ' + (currentLang === 'zh' ? '实时' : 'LIVE') : '📅'} ${q.date || now}</span>
+                <button class="quote-refresh-btn" onclick="loadQuote(document.getElementById('symbol').value.trim())">${t.quote_refresh}</button>
+            </div>`;
+    }
+
+    function loadQuote(symbolVal) {
+        if (!symbolVal || symbolVal.length < 5) return;
+        const panel = document.getElementById("quote-panel");
+        const t = I18N[currentLang];
+        panel.className = "quote-panel flat";
+        panel.innerHTML = `<span style="color:#9ca3af;font-size:13px">${t.quote_loading}</span>`;
+        clearTimeout(quoteTimer);
+        quoteTimer = setTimeout(() => {
+            fetch("/api/realtime-quote/" + encodeURIComponent(symbolVal))
+                .then(r => r.json())
+                .then(q => {
+                    if (q.error) throw new Error(q.error);
+                    renderQuote(q);
+                })
+                .catch(() => {
+                    panel.className = "quote-panel flat";
+                    panel.innerHTML = `<span style="color:#9ca3af;font-size:13px">${I18N[currentLang].quote_error}</span>`;
+                });
+        }, 300);
+    }
+
+    (function () {
+        const symbolInput = document.getElementById("symbol");
+        const labelInput = document.getElementById("label");
+        const labelAutoInput = document.getElementById("label_auto");
+        let nameTimer = null;
+
+        function isAuto() {
+            return labelAutoInput.value === "true";
+        }
+
+        function fetchAndSetName(symbolVal) {
+            if (!symbolVal || symbolVal.length < 5) {
+                if (isAuto()) labelInput.value = symbolVal;
+                return;
+            }
+            clearTimeout(nameTimer);
+            nameTimer = setTimeout(() => {
+                fetch("/api/stock-name/" + encodeURIComponent(symbolVal))
+                    .then(r => r.json())
+                    .then(data => {
+                        if (data.name && isAuto()) {
+                            labelInput.value = data.name;
+                            labelAutoInput.value = "true";
+                        }
+                    })
+                    .catch(() => {
+                        if (isAuto()) labelInput.value = symbolVal;
+                    });
+            }, 600);
+        }
+
+        symbolInput.addEventListener("input", function () {
+            fetchAndSetName(symbolInput.value.trim());
+            loadQuote(symbolInput.value.trim());
+            loadKline(symbolInput.value.trim());
+        });
+
+        labelInput.addEventListener("input", function () {
+            const symbolValue = symbolInput.value.trim();
+            const labelValue = labelInput.value.trim();
+            labelAutoInput.value = (!labelValue || labelValue === symbolValue) ? "true" : "false";
+        });
+
+        fetchAndSetName(symbolInput.value.trim());
+        loadQuote(symbolInput.value.trim());
+        // loadKline called after kline functions are defined below
+    })();
+
+    // ── K-line Chart (ECharts) ────────────────────────────────────
+    function switchKlinePeriod(period, btn) {
+        klinePeriod = period;
+        document.querySelectorAll(".kline-btn").forEach(b => b.classList.remove("active"));
+        btn.classList.add("active");
+        if (klineSymbol) loadKline(klineSymbol);
+    }
+
+    function initKlineChart() {
+        if (klineChart) return true;
+        const el = document.getElementById("kline-chart");
+        if (!el) return false;
+        try {
+            klineChart = echarts.init(el);
+            window.addEventListener("resize", () => klineChart && klineChart.resize());
+            return true;
+        } catch (e) {
+            console.error("ECharts init error:", e);
+            return false;
+        }
+    }
+
+    function loadKline(symbolVal) {
+        if (!symbolVal || symbolVal.length < 5) return;
+        klineSymbol = symbolVal;
+        const wrap = document.getElementById("kline-wrap");
+        wrap.classList.add("visible");
+
+        // Delay to let browser apply display:block and compute dimensions
+        setTimeout(() => {
+            if (!initKlineChart()) return;
+            klineChart.showLoading({ text: I18N[currentLang].kline_loading,
+                maskColor: "rgba(255,255,255,0.9)", textColor: "#374151", fontSize: 13 });
+
+            fetch(`/api/kline/${encodeURIComponent(symbolVal)}?period=${klinePeriod}`)
+                .then(r => r.json())
+                .then(data => {
+                    if (data.error) throw new Error(data.error);
+                    renderKlineChart(data);
+                })
+                .catch(err => {
+                    console.error("Kline load error:", err);
+                    klineChart.hideLoading();
+                    klineChart.setOption({
+                        title: { text: I18N[currentLang].kline_error,
+                            left: "center", top: "center",
+                            textStyle: { color: "#9ca3af", fontSize: 14 } }
+                    }, true);
+                });
+        }, 60);
+    }
+
+    function renderKlineChart(data) {
+        if (!klineChart) return;
+        const bars = data.bars;
+        if (!bars || !bars.length) { klineChart.hideLoading(); return; }
+
+        const times     = bars.map(b => b.t);
+        const ohlc      = bars.map(b => [b.o, b.c, b.l, b.h]);
+        const vols      = bars.map(b => b.v);
+        const volColors = bars.map(b => b.c >= b.o ? "#dc2626" : "#16a34a");
+
+        // Show last ~120 bars by default
+        const startPct = Math.max(0, Math.round((1 - 120 / bars.length) * 100));
+
+        const option = {
+            backgroundColor: "#fff",
+            animation: false,
+            tooltip: {
+                trigger: "axis",
+                axisPointer: { type: "cross" },
+                backgroundColor: "rgba(22,22,22,0.9)",
+                borderWidth: 0,
+                textStyle: { color: "#f3f4f6", fontSize: 12 },
+                formatter(params) {
+                    const k = params.find(p => p.seriesName === "K");
+                    const vp = params.find(p => p.seriesName === "Vol");
+                    if (!k) return "";
+                    const [o, c, l, h] = k.value;
+                    const chg = c - o, chgPct = o ? (chg / o * 100).toFixed(2) : "—";
+                    const color = c >= o ? "#dc2626" : "#16a34a";
+                    const fmtV = n => n >= 1e8 ? (n/1e8).toFixed(2)+"亿" : n >= 1e4 ? (n/1e4).toFixed(2)+"万" : String(n);
+                    return `<div style="padding:4px 2px"><b style="color:#e5e7eb">${k.name}</b><br>
+                        开 <b style="color:${color}">${o}</b> &nbsp; 收 <b style="color:${color}">${c}</b><br>
+                        高 <b style="color:#dc2626">${h}</b> &nbsp; 低 <b style="color:#16a34a">${l}</b><br>
+                        涨跌 <b style="color:${color}">${chg>=0?"+":""}${chg.toFixed(3)} (${chg>=0?"+":""}${chgPct}%)</b><br>
+                        量 ${vp ? fmtV(vp.value) : "—"}</div>`;
+                }
+            },
+            axisPointer: { link: [{ xAxisIndex: "all" }] },
+            grid: [
+                { left: 68, right: 12, top: 12, bottom: 90 },
+                { left: 68, right: 12, height: 56, bottom: 28 }
+            ],
+            xAxis: [
+                { type: "category", data: times, scale: true, boundaryGap: true,
+                  axisLine: { lineStyle: { color: "#e5e7eb" } },
+                  axisLabel: { color: "#6b7280", fontSize: 11,
+                      formatter: v => v.length > 10 ? v.slice(5, 16) : v.slice(5) },
+                  splitLine: { show: false }, gridIndex: 0 },
+                { type: "category", data: times, scale: true, boundaryGap: true,
+                  axisLabel: { show: false }, splitLine: { show: false }, gridIndex: 1 }
+            ],
+            yAxis: [
+                { scale: true, splitLine: { lineStyle: { color: "#f3f4f6" } },
+                  axisLabel: { color: "#6b7280", fontSize: 11 }, gridIndex: 0 },
+                { scale: true, splitLine: { show: false },
+                  axisLabel: { color: "#9ca3af", fontSize: 10,
+                      formatter: n => n >= 1e8 ? (n/1e8).toFixed(1)+"亿" : n >= 1e4 ? (n/1e4).toFixed(1)+"万" : String(n) },
+                  gridIndex: 1 }
+            ],
+            dataZoom: [
+                { type: "inside", xAxisIndex: [0, 1], start: startPct, end: 100 },
+                { type: "slider", xAxisIndex: [0, 1], bottom: 0, height: 22,
+                  borderColor: "#e5e7eb", fillerColor: "rgba(67,56,202,0.08)",
+                  handleStyle: { color: "#4338ca" }, textStyle: { color: "#6b7280", fontSize: 11 } }
+            ],
+            series: [
+                {
+                    name: "K", type: "candlestick", xAxisIndex: 0, yAxisIndex: 0,
+                    data: ohlc,
+                    itemStyle: {
+                        color: "#dc2626", color0: "#16a34a",
+                        borderColor: "#dc2626", borderColor0: "#16a34a"
+                    }
+                },
+                {
+                    name: "Vol", type: "bar", xAxisIndex: 1, yAxisIndex: 1,
+                    data: vols.map((v, i) => ({ value: v, itemStyle: { color: volColors[i] } })),
+                    barMaxWidth: 10
+                }
+            ]
+        };
+        klineChart.hideLoading();
+        klineChart.setOption(option, true);
+        klineChart.resize();
+    }
+
+    // Initial load — runs after all functions are defined
+    (function () {
+        var sym = document.getElementById("symbol").value.trim();
+        if (sym) loadKline(sym);
+
+        document.getElementById("symbol").addEventListener("input", function () {
+            loadKline(this.value.trim());
+        });
+    })();
+
+    // ── T+0 AI Analysis ──────────────────────────────────────────
+    var t0AutoTimer = null;
+    var t0CurrentSymbol = "";
+
+    const PROVIDER_PRESETS = {
+        Ollama:   { base_url: "http://localhost:11434", model: "qwen2.5:7b" },
+        DeepSeek: { base_url: "https://api.deepseek.com", model: "deepseek-chat" },
+        OpenAI:   { base_url: "https://api.openai.com",   model: "gpt-4o-mini" },
+        Qwen:     { base_url: "https://dashscope.aliyuncs.com/compatible-mode", model: "qwen-turbo" },
+        Custom:   { base_url: "", model: "" },
+    };
+
+    function onProviderChange(val) {
+        const preset = PROVIDER_PRESETS[val] || PROVIDER_PRESETS.Custom;
+        if (preset.base_url) document.getElementById("cfg-base-url").value = preset.base_url;
+        if (preset.model)    document.getElementById("cfg-model").value = preset.model;
+        document.getElementById("ollama-hint").style.display = val === "Ollama" ? "block" : "none";
+    }
+
+    function openSettings() {
+        fetch("/api/llm-config").then(r => r.json()).then(cfg => {
+            const provider = cfg.provider || "Ollama";
+            document.getElementById("cfg-provider").value = provider;
+            document.getElementById("cfg-base-url").value = cfg.base_url || "";
+            document.getElementById("cfg-api-key").value  = "";  // never pre-fill key
+            document.getElementById("cfg-model").value    = cfg.model || "";
+            document.getElementById("ollama-hint").style.display = provider === "Ollama" ? "block" : "none";
+        });
+        document.getElementById("settings-modal").classList.add("open");
+    }
+
+    function closeSettings() {
+        document.getElementById("settings-modal").classList.remove("open");
+    }
+
+    function saveSettings() {
+        const cfg = {
+            provider: document.getElementById("cfg-provider").value,
+            base_url: document.getElementById("cfg-base-url").value.trim(),
+            model:    document.getElementById("cfg-model").value.trim(),
+        };
+        const key = document.getElementById("cfg-api-key").value.trim();
+        if (key) cfg.api_key = key;
+        fetch("/api/llm-config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(cfg),
+        }).then(() => closeSettings());
+    }
+
+    document.getElementById("settings-modal").addEventListener("click", function(e) {
+        if (e.target === this) closeSettings();
+    });
+
+    function fmtInd(v) { return v !== null && v !== undefined ? v : "—"; }
+
+    function renderT0Indicators(ind) {
+        const wrap = document.getElementById("t0-wrap");
+        wrap.classList.add("visible");
+
+        const sigEl = document.getElementById("t0-signal");
+        sigEl.textContent = ind.signal || "—";
+        sigEl.className = "t0-signal " +
+            (ind.signal && ind.signal.includes("买") ? "buy" :
+             ind.signal && ind.signal.includes("卖") ? "sell" : "hold");
+
+        const vwapDev = ind.vwap_dev_pct;
+        const devColor = vwapDev > 0 ? "up" : vwapDev < 0 ? "down" : "";
+        const rsiColor = ind.rsi < 40 ? "down" : ind.rsi > 60 ? "up" : "";
+        const macdColor = ind.macd_hist > 0 ? "up" : "down";
+
+        document.getElementById("t0-indicators").innerHTML = `
+            <div class="t0-card"><div class="t0-card-label">VWAP</div><div class="t0-card-value">${fmtInd(ind.vwap)}</div></div>
+            <div class="t0-card"><div class="t0-card-label">价格偏VWAP</div><div class="t0-card-value ${devColor}">${vwapDev !== null ? (vwapDev > 0 ? "+" : "") + vwapDev + "%" : "—"}</div></div>
+            <div class="t0-card"><div class="t0-card-label">RSI(14)</div><div class="t0-card-value ${rsiColor}">${fmtInd(ind.rsi)}</div></div>
+            <div class="t0-card"><div class="t0-card-label">MACD柱</div><div class="t0-card-value ${macdColor}">${fmtInd(ind.macd_hist)}</div></div>
+            <div class="t0-card"><div class="t0-card-label">布林上轨</div><div class="t0-card-value up">${fmtInd(ind.bb_upper)}</div></div>
+            <div class="t0-card"><div class="t0-card-label">布林下轨</div><div class="t0-card-value down">${fmtInd(ind.bb_lower)}</div></div>
+            <div class="t0-card"><div class="t0-card-label">MA5 / MA10</div><div class="t0-card-value">${fmtInd(ind.ma5)} / ${fmtInd(ind.ma10)}</div></div>
+            <div class="t0-card"><div class="t0-card-label">量比</div><div class="t0-card-value">${fmtInd(ind.vol_ratio)}</div></div>
+            <div class="t0-card"><div class="t0-card-label">量趋势</div><div class="t0-card-value">${fmtInd(ind.vol_trend)}</div></div>
+            <div class="t0-card"><div class="t0-card-label">更新时间</div><div class="t0-card-value" style="font-size:11px" id="t0-refresh-time">${new Date().toLocaleTimeString("zh-CN",{hour:"2-digit",minute:"2-digit",second:"2-digit"})}</div></div>`;
+
+        const reasons = (ind.signal_reasons || []).join(" · ");
+        document.getElementById("t0-reasons").textContent = reasons ? "信号依据：" + reasons : "";
+    }
+
+    function refreshT0Indicators(force) {
+        if (!t0CurrentSymbol) return;
+        var btn = document.getElementById("t0-refresh-btn");
+        var prevText = btn ? btn.textContent : "";
+        if (btn) { btn.textContent = "⏳ 刷新中…"; btn.disabled = true; }
+        var url = "/api/t0-indicators/" + encodeURIComponent(t0CurrentSymbol) + (force ? "?force=1" : "");
+        fetch(url)
+            .then(r => r.json())
+            .then(ind => {
+                if (btn) { btn.textContent = prevText; btn.disabled = false; }
+                if (ind.error) {
+                    var box = document.getElementById("t0-ai-box");
+                    if (box) box.textContent = "⚠️ 指标获取失败：" + ind.error;
+                    return;
+                }
+                renderT0Indicators(ind);
+            })
+            .catch(e => {
+                if (btn) { btn.textContent = prevText; btn.disabled = false; }
+                var box = document.getElementById("t0-ai-box");
+                if (box) box.textContent = "❌ 刷新失败：" + e;
+            });
+    }
+
+    function runT0Analysis() {
+        if (!t0CurrentSymbol) return;
+        const box = document.getElementById("t0-ai-box");
+        box.textContent = "🤖 AI 分析中，请稍候...";
+        fetch("/api/t0-analysis", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ symbol: t0CurrentSymbol }),
+        })
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) { box.textContent = "❌ " + data.error; return; }
+            if (data.indicators) renderT0Indicators(data.indicators);
+            box.textContent = data.analysis || "—";
+        })
+        .catch(e => { box.textContent = "❌ 请求失败：" + e; });
+    }
+
+    function toggleT0Auto(on) {
+        clearInterval(t0AutoTimer);
+        if (on) t0AutoTimer = setInterval(function(){ refreshT0Indicators(false); }, 60000);
+    }
+
+    function loadT0(symbolVal) {
+        if (!symbolVal || symbolVal.length < 5) return;
+        t0CurrentSymbol = symbolVal;
+        document.getElementById("t0-wrap").classList.add("visible");
+        refreshT0Indicators();
+    }
+
+    // Attach to symbol input (duplicates avoided by separate listener)
+    (function () {
+        var sym = document.getElementById("symbol").value.trim();
+        if (sym) loadT0(sym);
+        document.getElementById("symbol").addEventListener("input", function () {
+            loadT0(this.value.trim());
+            // Sync the TA symbol field with the main symbol input
+            var taInput = document.getElementById("ta-symbol");
+            if (taInput) taInput.value = this.value.trim();
+        });
+    })();
+
+    // ── AI Multi-Agent Analysis (TradingAgents) ──────────────────────────
+
+    var taCurrentJobId  = null;
+    var taPollTimer     = null;
+
+    // Set today's date as default for the date input
+    (function() {
+        var d = document.getElementById("ta-date");
+        if (d && !d.value) {
+            d.value = new Date().toISOString().slice(0, 10);
+        }
+    })();
+
+    function launchTaAnalysis() {
+        var symbol = (document.getElementById("ta-symbol").value || "").trim();
+        var date   = (document.getElementById("ta-date").value || "").trim();
+        if (!symbol) { alert("Please enter a stock symbol first."); return; }
+
+        var btn = document.getElementById("ta-launch-btn");
+        btn.disabled = true;
+        btn.textContent = "⏳ Submitting…";
+
+        clearInterval(taPollTimer);
+        taSetStatus("running", "🔍 Checking LLM configuration…");
+
+        fetch("/api/ta-analysis", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ symbol: symbol, date: date }),
+        })
+        .then(r => r.json())
+        .then(data => {
+            btn.disabled = false;
+            btn.textContent = "▶ Run Agents";
+            if (data.error) {
+                var hint = "";
+                if (data.error.toLowerCase().includes("ollama")) {
+                    hint = '<br><small>💡 Start Ollama: <code>ollama serve</code> — or configure a different LLM in ⚙ Settings</small>';
+                } else if (data.error.toLowerCase().includes("api key")) {
+                    hint = '<br><small>💡 Add your API key in ⚙ Settings</small>';
+                }
+                taSetStatus("failed", "❌ " + data.error + hint);
+                return;
+            }
+            taCurrentJobId = data.job_id;
+            taSetStatus("running", "⏳ Agents are analysing <strong>" + data.symbol + "</strong> — this takes 2–5 min…");
+            taPollTimer = setInterval(taPoll, 4000);
+        })
+        .catch(e => {
+            btn.disabled = false;
+            btn.textContent = "▶ Run Agents";
+            taSetStatus("failed", "❌ Network error: " + e);
+        });
+    }
+
+    function taPoll() {
+        if (!taCurrentJobId) { clearInterval(taPollTimer); return; }
+        fetch("/api/ta-status/" + taCurrentJobId)
+        .then(r => r.json())
+        .then(data => {
+            if (data.status === "done") {
+                clearInterval(taPollTimer);
+                document.getElementById("ta-launch-btn").disabled = false;
+                taSetStatus("done", "✅ Analysis complete for <strong>" + data.symbol + "</strong>"
+                    + " (" + (data.trade_date || "") + ")");
+                taRenderReports(data);
+                taLoadConsensus(data.symbol, data.decision);
+            } else if (data.status === "failed") {
+                clearInterval(taPollTimer);
+                document.getElementById("ta-launch-btn").disabled = false;
+                taSetStatus("failed", "❌ " + taFriendlyError(data.error || "unknown error"));
+            } else {
+                var step = data.status === "running" ? "Running agents…" : "Queued…";
+                taSetStatus("running", "⏳ " + step + "  <small style='color:#6b7280'>(job: " + taCurrentJobId + ")</small>");
+            }
+        })
+        .catch(() => {});
+    }
+
+    function taFriendlyError(raw) {
+        var s = String(raw);
+        if (s.includes("insufficient_quota") || s.includes("quota"))
+            return 'OpenAI quota exceeded — check billing at <a href="https://platform.openai.com" target="_blank">platform.openai.com</a> or switch to a free LLM in ⚙ Settings.';
+        if (s.includes("401") || s.includes("Unauthorized") || s.includes("api_key"))
+            return 'API key rejected — update it in ⚙ Settings.';
+        if (s.includes("ollama") || s.includes("11434") || s.includes("ConnectionRefused"))
+            return 'Ollama not running — start with <code>ollama serve</code> or configure another LLM in ⚙ Settings.';
+        if (s.includes("timed out") || s.includes("timeout") || s.includes("Timeout"))
+            return 'Request timed out — check your network/proxy or try a faster LLM model.';
+        if (s.length > 200) s = s.slice(0, 200) + "…";
+        return s;
+    }
+
+    function loadTaLatest() {
+        var symbol = (document.getElementById("ta-symbol").value || "").trim();
+        if (!symbol) { alert("Enter a symbol to load the latest analysis."); return; }
+        fetch("/api/ta-latest/" + symbol)
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) { taSetStatus("failed", "No previous analysis found for " + symbol); return; }
+            taSetStatus("done", "✅ Loaded latest analysis for " + data.symbol
+                + " (" + (data.trade_date || "") + ")");
+            taRenderReports(data);
+            taLoadConsensus(data.symbol, data.decision);
+        })
+        .catch(e => taSetStatus("failed", "❌ " + e));
+    }
+
+    function taLoadConsensus(symbol, taDecision) {
+        fetch("/api/consensus/" + symbol)
+        .then(r => r.json())
+        .then(data => {
+            if (data.error) return;
+            taRenderConsensus(data);
+        })
+        .catch(() => {});
+    }
+
+    function taSetStatus(cls, text) {
+        var bar = document.getElementById("ta-status-bar");
+        bar.style.display = "flex";
+        bar.className = "ta-status-bar " + cls;
+        var spinner = cls === "running"
+            ? '<div class="ta-spinner"></div>' : "";
+        bar.innerHTML = spinner + "<span>" + text + "</span>";
+    }
+
+    function taRenderConsensus(data) {
+        var c   = data.consensus || {};
+        var box = document.getElementById("ta-consensus");
+        var conf = c.confidence || "none";
+
+        var krCls = (data.kronos_action||"").toLowerCase() === "buy"  ? "buy"
+                  : (data.kronos_action||"").toLowerCase() === "sell" ? "sell" : "hold";
+        var taCls = (data.ta_decision||"").toLowerCase().includes("buy")  ? "buy"
+                  : (data.ta_decision||"").toLowerCase().includes("sell") ? "sell" : "hold";
+
+        box.style.display = "flex";
+        box.innerHTML =
+            '<div class="consensus-box ' + conf + '">' +
+                '<div>' +
+                    '<div class="consensus-signal">' + (c.label || "—") + '</div>' +
+                    '<div class="consensus-pills">' +
+                        '<span class="pill ' + krCls + '">Kronos: ' + (data.kronos_action||"—") + '</span>' +
+                        '<span class="pill ' + taCls + '">AI Agents: ' + (data.ta_decision||"—") + '</span>' +
+                        '<span class="pill">Confidence: ' + conf + '</span>' +
+                    '</div>' +
+                '</div>' +
+                '<div class="consensus-meta" style="flex:1;">' + (c.description || "") + '</div>' +
+            '</div>';
+    }
+
+    var TA_REPORT_DEFS = [
+        { key: "market_report",       icon: "📈", title: "Market Technical Analysis", open: true },
+        { key: "fundamentals_report", icon: "💰", title: "Fundamentals Analysis",     open: false },
+        { key: "news_report",         icon: "📰", title: "News & Macro",              open: false },
+        { key: "sentiment_report",    icon: "💬", title: "Sentiment",                 open: false },
+        { key: "debate_judge",        icon: "🐂🐻", title: "Bull/Bear Debate Verdict", open: false },
+        { key: "risk_judge",          icon: "⚠️",  title: "Risk Assessment Verdict",  open: false },
+        { key: "trader_plan",         icon: "🧭", title: "Trader Investment Plan",    open: false },
+        { key: "final_decision",      icon: "🎯", title: "Final Portfolio Decision",  open: true  },
+    ];
+
+    function taRenderReports(job) {
+        var reports = job.reports || {};
+        var container = document.getElementById("ta-reports");
+        var html = "";
+        TA_REPORT_DEFS.forEach(function(def) {
+            var content = reports[def.key] || "";
+            if (!content) return;
+            var bodyId = "ta-body-" + def.key;
+            var chevId = "ta-chev-" + def.key;
+            var openCls = def.open ? " open" : "";
+            html +=
+                '<div class="ta-report">' +
+                    '<div class="ta-report-header" onclick="taToggle(\'' + bodyId + '\',\'' + chevId + '\')">' +
+                        '<span>' + def.icon + ' ' + def.title + '</span>' +
+                        '<span class="ta-chevron' + openCls + '" id="' + chevId + '">▼</span>' +
+                    '</div>' +
+                    '<div class="ta-report-body' + openCls + '" id="' + bodyId + '">' +
+                        escHtml(content) +
+                    '</div>' +
+                '</div>';
+        });
+        container.innerHTML = html || '<div class="ta-empty">No agent reports available.</div>';
+    }
+
+    function taToggle(bodyId, chevId) {
+        var body = document.getElementById(bodyId);
+        var chev = document.getElementById(chevId);
+        if (!body) return;
+        body.classList.toggle("open");
+        if (chev) chev.classList.toggle("open");
+    }
+
+    function escHtml(s) {
+        return String(s)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;");
+    }
+</script>
+</body>
+</html>
