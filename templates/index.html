@@ -1399,7 +1399,7 @@
         fetch("/api/ta-analysis", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ symbol: symbol, date: date }),
+            body: JSON.stringify({ symbol: symbol, date: date, lang: currentLang }),
         })
         .then(r => r.json())
         .then(data => {

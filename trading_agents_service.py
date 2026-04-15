@@ -99,7 +99,7 @@ def _check_llm_reachable(llm_cfg: dict) -> str | None:
     }
     try:
         resp = requests.post(probe_url, json=probe_body, headers=headers,
-                             proxies=proxies, verify=False, timeout=10)
+                             proxies=proxies, verify=False, timeout=20)
         if resp.status_code in (200, 201):
             return None
         data = resp.json() if resp.content else {}
@@ -172,7 +172,7 @@ _DEFAULT_BACKENDS = {
 }
 
 
-def _build_ta_config(llm_cfg: dict) -> dict:
+def _build_ta_config(llm_cfg: dict, *, lang: str = "en") -> dict:
     """Map Kronos llm_config.json settings to a TradingAgents config dict."""
     from tradingagents.default_config import DEFAULT_CONFIG
 
@@ -190,7 +190,7 @@ def _build_ta_config(llm_cfg: dict) -> dict:
     cfg["quick_think_llm"] = model
     cfg["max_debate_rounds"]       = 1
     cfg["max_risk_discuss_rounds"] = 1
-    cfg["output_language"] = "English"
+    cfg["output_language"] = "Chinese" if lang == "zh" else "English"
 
     # Set backend URL
     if ta_provider == "ollama":
@@ -219,14 +219,14 @@ def _build_ta_config(llm_cfg: dict) -> dict:
 
 
 def _instance_key(cfg: dict) -> str:
-    return f"{cfg['llm_provider']}:{cfg['deep_think_llm']}:{cfg.get('backend_url','')}"
+    return f"{cfg['llm_provider']}:{cfg['deep_think_llm']}:{cfg.get('backend_url','')}:{cfg.get('output_language','English')}"
 
 
 # ---------------------------------------------------------------------------
 # Background worker
 # ---------------------------------------------------------------------------
 
-def _run_job(job_id: str, symbol: str, trade_date: str, config: ToolkitConfig) -> None:
+def _run_job(job_id: str, symbol: str, trade_date: str, config: ToolkitConfig, *, lang: str = "en") -> None:
     """Execute a TradingAgents analysis in a background thread."""
     from trade_storage import update_ta_job
     from tradingagents.graph.trading_graph import TradingAgentsGraph
@@ -242,7 +242,7 @@ def _run_job(job_id: str, symbol: str, trade_date: str, config: ToolkitConfig) -
             update_ta_job(config, job_id, status="failed", error=llm_err)
             return
 
-        ta_cfg = _build_ta_config(llm_cfg)
+        ta_cfg = _build_ta_config(llm_cfg, lang=lang)
         ticker = to_yfinance_ticker(symbol)
 
         with _lock:
@@ -279,7 +279,7 @@ def _run_job(job_id: str, symbol: str, trade_date: str, config: ToolkitConfig) -
 # Public API
 # ---------------------------------------------------------------------------
 
-def submit_job(config: ToolkitConfig, symbol: str, trade_date: str | None = None) -> str:
+def submit_job(config: ToolkitConfig, symbol: str, trade_date: str | None = None, *, lang: str = "en") -> str:
     """Fire a TradingAgents analysis job in the background. Returns job_id."""
     from trade_storage import save_ta_job
 
@@ -292,6 +292,7 @@ def submit_job(config: ToolkitConfig, symbol: str, trade_date: str | None = None
     thread = threading.Thread(
         target=_run_job,
         args=(job_id, symbol, trade_date, config),
+        kwargs={"lang": lang},
         daemon=True,
         name=f"ta-{job_id}",
     )

@@ -475,6 +475,7 @@ def ta_analysis_api():
             return jsonify({"error": "symbol is required"}), 400
         symbol = normalize_symbol(raw_symbol)
         trade_date = payload.get("date") or ""
+        lang = payload.get("lang", "en")  # "en" or "zh"
         config = ToolkitConfig()
         config.ensure_directories()
 
@@ -484,7 +485,7 @@ def ta_analysis_api():
         if llm_err:
             return jsonify({"error": llm_err}), 400
 
-        job_id = ta_service.submit_job(config, symbol, trade_date or None)
+        job_id = ta_service.submit_job(config, symbol, trade_date or None, lang=lang)
         return jsonify({"job_id": job_id, "symbol": symbol, "status": "pending"})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
