@@ -548,5 +548,62 @@ def consensus_api(symbol: str):
         return jsonify({"error": str(exc)}), 400
 
 
+# ── Watchlist API ──────────────────────────────────────────────────────
+
+@app.route("/api/watchlist", methods=["GET"])
+def watchlist_get():
+    path = Path(__file__).resolve().parent / "data" / "watchlist.json"
+    if path.exists():
+        import json as _json
+        return jsonify(_json.loads(path.read_text(encoding="utf-8")))
+    return jsonify({"items": []})
+
+
+@app.route("/api/watchlist", methods=["POST"])
+def watchlist_add():
+    import json as _json
+    path = Path(__file__).resolve().parent / "data" / "watchlist.json"
+    payload = request.get_json(silent=True) or {}
+    raw_symbol = payload.get("symbol", "").strip()
+    if not raw_symbol:
+        return jsonify({"error": "symbol required"}), 400
+    try:
+        sym = normalize_symbol(raw_symbol)
+        name = get_stock_name(sym)
+    except Exception as exc:
+        return jsonify({"error": str(exc)}), 400
+
+    data = {"items": []}
+    if path.exists():
+        data = _json.loads(path.read_text(encoding="utf-8"))
+
+    if not any(item["symbol"] == sym for item in data["items"]):
+        data["items"].append({"symbol": sym, "name": name})
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(_json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    return jsonify(data)
+
+
+@app.route("/api/watchlist/<symbol>", methods=["DELETE"])
+def watchlist_remove(symbol: str):
+    import json as _json
+    path = Path(__file__).resolve().parent / "data" / "watchlist.json"
+    try:
+        sym = normalize_symbol(symbol.strip())
+    except Exception:
+        sym = symbol.strip()
+
+    data = {"items": []}
+    if path.exists():
+        data = _json.loads(path.read_text(encoding="utf-8"))
+
+    data["items"] = [item for item in data["items"] if item["symbol"] != sym]
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(_json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
+
+    return jsonify(data)
+
+
 if __name__ == "__main__":
     app.run(host="127.0.0.1", port=7080, debug=False)
