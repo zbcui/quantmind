@@ -388,9 +388,164 @@
         .ta-chevron.open { transform: rotate(180deg); }
 
         .ta-empty { color: #9ca3af; font-size: 13px; font-style: italic; padding: 12px 0; }
+
+        /* ── Watchlist Sidebar ─────────────────────────────────────── */
+        .app-layout {
+            display: flex;
+            min-height: 100vh;
+        }
+        .watchlist-sidebar {
+            width: 280px;
+            min-width: 280px;
+            background: #fff;
+            border-right: 1px solid #e5e7eb;
+            padding: 20px 0;
+            overflow-y: auto;
+            position: sticky;
+            top: 0;
+            height: 100vh;
+            box-shadow: 2px 0 12px rgba(0,0,0,0.04);
+        }
+        .watchlist-header {
+            padding: 0 16px 16px;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        .watchlist-title {
+            font-size: 16px;
+            font-weight: 700;
+            color: #1f2937;
+            margin: 0 0 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        .watchlist-add-row {
+            display: flex;
+            gap: 6px;
+        }
+        .watchlist-add-input {
+            flex: 1;
+            border: 1px solid #d1d5db;
+            border-radius: 8px;
+            padding: 8px 10px;
+            font-size: 13px;
+            outline: none;
+        }
+        .watchlist-add-input:focus {
+            border-color: #2563eb;
+            box-shadow: 0 0 0 2px rgba(37,99,235,0.12);
+        }
+        .watchlist-add-btn {
+            background: #2563eb;
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            padding: 8px 14px;
+            font-size: 13px;
+            font-weight: 600;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+        .watchlist-add-btn:hover { background: #1d4ed8; }
+        .watchlist-add-btn:disabled { background: #93c5fd; cursor: not-allowed; }
+        .watchlist-list {
+            list-style: none;
+            margin: 0;
+            padding: 8px 0;
+        }
+        .watchlist-item {
+            display: flex;
+            align-items: center;
+            padding: 10px 16px;
+            cursor: pointer;
+            transition: background 0.15s;
+            gap: 8px;
+            border-left: 3px solid transparent;
+        }
+        .watchlist-item:hover {
+            background: #f9fafb;
+        }
+        .watchlist-item.active {
+            background: #eef2ff;
+            border-left-color: #2563eb;
+        }
+        .watchlist-item-info {
+            flex: 1;
+            min-width: 0;
+        }
+        .watchlist-item-name {
+            font-size: 14px;
+            font-weight: 600;
+            color: #1f2937;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        .watchlist-item-code {
+            font-size: 12px;
+            color: #9ca3af;
+            font-family: monospace;
+        }
+        .watchlist-item-remove {
+            background: none;
+            border: none;
+            color: #d1d5db;
+            font-size: 16px;
+            cursor: pointer;
+            padding: 2px 6px;
+            border-radius: 4px;
+            line-height: 1;
+            flex-shrink: 0;
+        }
+        .watchlist-item-remove:hover {
+            color: #ef4444;
+            background: #fef2f2;
+        }
+        .watchlist-empty {
+            text-align: center;
+            color: #9ca3af;
+            font-size: 13px;
+            padding: 32px 16px;
+        }
+        .app-main {
+            flex: 1;
+            min-width: 0;
+        }
+        @media (max-width: 900px) {
+            .app-layout { flex-direction: column; }
+            .watchlist-sidebar {
+                width: 100%;
+                min-width: unset;
+                height: auto;
+                position: relative;
+                border-right: none;
+                border-bottom: 1px solid #e5e7eb;
+                max-height: 300px;
+            }
+        }
     </style>
 </head>
 <body>
+<div class="app-layout">
+
+<!-- Watchlist Sidebar -->
+<aside class="watchlist-sidebar" id="watchlist-sidebar">
+    <div class="watchlist-header">
+        <h2 class="watchlist-title">⭐ <span data-i18n="watchlist_title">Watchlist</span></h2>
+        <div class="watchlist-add-row">
+            <input class="watchlist-add-input" id="watchlist-input" type="text"
+                   placeholder="输入股票代码" data-i18n-placeholder="watchlist_placeholder" maxlength="10">
+            <button class="watchlist-add-btn" id="watchlist-add-btn" onclick="addToWatchlist()"
+                    data-i18n="watchlist_add">+ Add</button>
+        </div>
+    </div>
+    <ul class="watchlist-list" id="watchlist-list">
+        <li class="watchlist-empty" id="watchlist-empty" data-i18n="watchlist_empty">No stocks in watchlist</li>
+    </ul>
+</aside>
+
+<!-- Main Content -->
+<div class="app-main">
 <div class="container">
     <div class="header-row">
         <h1 data-i18n="title">Kronos + Qlib Stock Analyzer</h1>
@@ -773,6 +928,8 @@
     </div>
 </div>
 </div>
+</div> <!-- /app-main -->
+</div> <!-- /app-layout -->
 
 <script>
     const I18N = {
@@ -848,6 +1005,10 @@
             settings_title: "⚙ LLM API Settings", settings_provider: "Provider",
             settings_base_url: "API Base URL", settings_api_key: "API Key",
             settings_model: "Model", settings_cancel: "Cancel", settings_save: "Save",
+            watchlist_title: "Watchlist",
+            watchlist_add: "+ Add",
+            watchlist_placeholder: "Stock code",
+            watchlist_empty: "No stocks in watchlist",
         },
         zh: {
             title: "Kronos + Qlib 股票分析工具",
@@ -921,6 +1082,10 @@
             settings_title: "⚙ LLM API 设置", settings_provider: "服务商",
             settings_base_url: "API Base URL", settings_api_key: "API Key",
             settings_model: "模型", settings_cancel: "取消", settings_save: "保存",
+            watchlist_title: "自选股",
+            watchlist_add: "+ 添加",
+            watchlist_placeholder: "输入股票代码",
+            watchlist_empty: "暂无自选股",
         }
     };
 
@@ -1572,6 +1737,100 @@
             .replace(/</g, "&lt;")
             .replace(/>/g, "&gt;");
     }
+
+    // ── Watchlist ────────────────────────────────────────────────────
+    var watchlistData = [];
+    var watchlistActiveSymbol = "";
+
+    function loadWatchlist() {
+        fetch("/api/watchlist")
+            .then(r => r.json())
+            .then(data => {
+                watchlistData = data.items || [];
+                renderWatchlist();
+            })
+            .catch(() => {});
+    }
+
+    function renderWatchlist() {
+        var list = document.getElementById("watchlist-list");
+        var emptyEl = document.getElementById("watchlist-empty");
+        var t = I18N[currentLang];
+        if (!watchlistData.length) {
+            list.innerHTML = '<li class="watchlist-empty" id="watchlist-empty" data-i18n="watchlist_empty">' +
+                (t.watchlist_empty || "No stocks in watchlist") + '</li>';
+            return;
+        }
+        var html = "";
+        watchlistData.forEach(function(item) {
+            var activeCls = item.symbol === watchlistActiveSymbol ? " active" : "";
+            html += '<li class="watchlist-item' + activeCls + '" data-symbol="' + escHtml(item.symbol) + '" onclick="selectWatchlistItem(\'' + escHtml(item.symbol) + '\')">' +
+                '<div class="watchlist-item-info">' +
+                    '<div class="watchlist-item-name">' + escHtml(item.name || item.symbol) + '</div>' +
+                    '<div class="watchlist-item-code">' + escHtml(item.symbol) + '</div>' +
+                '</div>' +
+                '<button class="watchlist-item-remove" onclick="event.stopPropagation();removeFromWatchlist(\'' + escHtml(item.symbol) + '\')" title="Remove">×</button>' +
+            '</li>';
+        });
+        list.innerHTML = html;
+    }
+
+    function addToWatchlist() {
+        var input = document.getElementById("watchlist-input");
+        var btn = document.getElementById("watchlist-add-btn");
+        var code = (input.value || "").trim();
+        if (code.length < 6) { input.focus(); return; }
+        btn.disabled = true;
+        fetch("/api/watchlist", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ symbol: code }),
+        })
+        .then(r => r.json())
+        .then(data => {
+            btn.disabled = false;
+            if (data.error) { alert(data.error); return; }
+            watchlistData = data.items || [];
+            renderWatchlist();
+            input.value = "";
+        })
+        .catch(e => {
+            btn.disabled = false;
+            alert("Failed to add: " + e);
+        });
+    }
+
+    function removeFromWatchlist(symbol) {
+        fetch("/api/watchlist/" + encodeURIComponent(symbol), { method: "DELETE" })
+            .then(r => r.json())
+            .then(data => {
+                watchlistData = data.items || [];
+                if (watchlistActiveSymbol === symbol) watchlistActiveSymbol = "";
+                renderWatchlist();
+            })
+            .catch(() => {});
+    }
+
+    function selectWatchlistItem(symbol) {
+        watchlistActiveSymbol = symbol;
+        renderWatchlist();
+
+        var symbolInput = document.getElementById("symbol");
+        if (symbolInput) {
+            symbolInput.value = symbol;
+            symbolInput.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+        var taInput = document.getElementById("ta-symbol");
+        if (taInput) taInput.value = symbol;
+    }
+
+    // Enter key support for watchlist input
+    document.getElementById("watchlist-input").addEventListener("keydown", function(e) {
+        if (e.key === "Enter") { e.preventDefault(); addToWatchlist(); }
+    });
+
+    // Load watchlist on page init
+    loadWatchlist();
 </script>
 </body>
 </html>
