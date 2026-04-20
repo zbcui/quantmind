@@ -25,7 +25,7 @@ from trading_service import (
 app = Flask(__name__)
 app.config["JSON_AS_ASCII"] = False
 app.json.ensure_ascii = False          # Flask ≥2.2 — emit raw UTF-8 in JSON
-app.secret_key = secrets.token_hex(32)
+app.secret_key = os.environ.get("FLASK_SECRET_KEY", "quantmind-default-secret-key-change-in-prod")
 app.config["SESSION_COOKIE_SAMESITE"] = "None"
 app.config["SESSION_COOKIE_SECURE"] = True
 
