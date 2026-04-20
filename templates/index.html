@@ -1511,7 +1511,12 @@
         .then(data => {
             if (data.error) { box.textContent = "❌ " + data.error; return; }
             if (data.indicators) renderT0Indicators(data.indicators);
-            box.textContent = data.analysis || "—";
+            // Render markdown-like analysis: bold, bullets, newlines
+            var txt = data.analysis || "—";
+            txt = txt.replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+            txt = txt.replace(/\*\*(.+?)\*\*/g, "<b>$1</b>");
+            txt = txt.replace(/\n/g, "<br>");
+            box.innerHTML = txt;
         })
         .catch(e => { box.textContent = "❌ 请求失败：" + e; });
     }

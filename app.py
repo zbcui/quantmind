@@ -24,9 +24,19 @@ from trading_service import (
 
 app = Flask(__name__)
 app.config["JSON_AS_ASCII"] = False
+app.json.ensure_ascii = False          # Flask ≥2.2 — emit raw UTF-8 in JSON
 app.secret_key = secrets.token_hex(32)
 app.config["SESSION_COOKIE_SAMESITE"] = "None"
 app.config["SESSION_COOKIE_SECURE"] = True
+
+
+@app.after_request
+def _set_utf8(response):
+    """Ensure every JSON response explicitly declares charset=utf-8."""
+    ct = response.content_type or ""
+    if "application/json" in ct and "charset" not in ct:
+        response.content_type = "application/json; charset=utf-8"
+    return response
 
 # ── Flask-Login setup ──────────────────────────────────────────────────
 login_manager = LoginManager()

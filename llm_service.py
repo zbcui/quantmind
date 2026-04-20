@@ -120,6 +120,7 @@ def call_llm(system_prompt: str, user_prompt: str, *, config_override: dict | No
     try:
         resp = requests.post(url, headers=headers, json=payload,
                              proxies=proxies, verify=verify, timeout=60)
+        resp.encoding = "utf-8"
         if resp.status_code == 200:
             return resp.json()["choices"][0]["message"]["content"].strip()
         if resp.status_code == 401:
