@@ -7,7 +7,7 @@ pandas
 pyarrow>=14.0.0
 pyqlib
 torch>=2.0.0
-tradingagents>=0.2.3
+tradingagents @ git+https://github.com/TauricResearch/TradingAgents.git
 werkzeug>=2.3.0
 huggingface_hub==0.33.1
 safetensors==0.6.2
