@@ -12,7 +12,7 @@ class ToolkitConfig:
         default_factory=lambda: Path(
             os.getenv(
                 "KRONOS_ROOT",
-                r"C:\qlik\tools\apache-tomcat-10.1.50-instance1\temp\Kronos",
+                str(Path(__file__).resolve().parent / "temp" / "Kronos"),
             )
         )
     )
@@ -20,7 +20,7 @@ class ToolkitConfig:
         default_factory=lambda: Path(
             os.getenv(
                 "QLIB_DATA_PATH",
-                r"C:\qlik\tools\kronos-qlib-toolkit\data\qlib_cn",
+                str(Path(__file__).resolve().parent / "data" / "qlib_cn"),
             )
         )
     )
@@ -28,7 +28,7 @@ class ToolkitConfig:
         default_factory=lambda: Path(
             os.getenv(
                 "KRONOS_TOOLKIT_OUTPUT",
-                r"C:\qlik\tools\kronos-qlib-toolkit\outputs",
+                str(Path(__file__).resolve().parent / "outputs"),
             )
         )
     )
