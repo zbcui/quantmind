@@ -591,7 +591,7 @@
         <div class="t0-reasons" id="t0-reasons"></div>
         <div class="t0-ai-box" id="t0-ai-box" data-i18n="t0_ai_hint">点击「AI 解读」获取智能分析建议</div>
         <div class="t0-actions">
-            <button class="t0-btn t0-btn-primary" onclick="runT0Analysis()" data-i18n="t0_btn_ai">🤖 AI 解读</button>
+            <button class="t0-btn t0-btn-primary" id="combined-ai-btn" onclick="runCombinedAnalysis()" data-i18n="t0_btn_ai">🤖 AI 解读</button>
             <button id="t0-refresh-btn" class="t0-btn t0-btn-secondary" onclick="refreshT0Indicators(true)" data-i18n="t0_btn_refresh">↻ 刷新指标</button>
             <label class="t0-auto-label">
                 <input type="checkbox" id="t0-auto" onchange="toggleT0Auto(this.checked)">
@@ -905,12 +905,9 @@
         <span class="ta-title">🤖 AI Multi-Agent Analysis</span>
         <div class="ta-controls">
             <input class="ta-symbol-input" id="ta-symbol" type="text" placeholder="601169"
-                   value="{{ form.symbol }}">
+                   value="{{ form.symbol }}" style="display:none;">
             <input class="ta-date-input" id="ta-date" type="date"
-                   value="{{ (now_date if now_date else '') }}">
-            <button class="ta-launch-btn" id="ta-launch-btn" onclick="launchTaAnalysis()">
-                ▶ Run Agents
-            </button>
+                   value="{{ (now_date if now_date else '') }}" style="display:none;">
             <button class="ta-latest-btn" onclick="loadTaLatest()">
                 ↺ Load Latest
             </button>
@@ -1521,6 +1518,26 @@
         .catch(e => { box.textContent = "❌ 请求失败：" + e; });
     }
 
+    function runCombinedAnalysis() {
+        var btn = document.getElementById("combined-ai-btn");
+        btn.disabled = true;
+
+        // 1) Run T0 analysis (fast, shows immediately)
+        runT0Analysis();
+
+        // 2) Sync symbol to TA hidden input and launch agents in background
+        var symbol = t0CurrentSymbol || (document.getElementById("symbol").value || "").trim();
+        if (!symbol) { btn.disabled = false; return; }
+        document.getElementById("ta-symbol").value = symbol;
+        if (!document.getElementById("ta-date").value) {
+            document.getElementById("ta-date").value = new Date().toISOString().slice(0, 10);
+        }
+        launchTaAnalysis();
+
+        // Re-enable button after T0 returns (agents keep running in background)
+        setTimeout(function() { btn.disabled = false; }, 3000);
+    }
+
     function toggleT0Auto(on) {
         clearInterval(t0AutoTimer);
         if (on) t0AutoTimer = setInterval(function(){ refreshT0Indicators(false); }, 60000);
@@ -1561,11 +1578,7 @@
     function launchTaAnalysis() {
         var symbol = (document.getElementById("ta-symbol").value || "").trim();
         var date   = (document.getElementById("ta-date").value || "").trim();
-        if (!symbol) { alert("Please enter a stock symbol first."); return; }
-
-        var btn = document.getElementById("ta-launch-btn");
-        btn.disabled = true;
-        btn.textContent = "⏳ Submitting…";
+        if (!symbol) return;
 
         clearInterval(taPollTimer);
         taSetStatus("running", "🔍 Checking LLM configuration…");
@@ -1577,8 +1590,6 @@
         })
         .then(r => r.json())
         .then(data => {
-            btn.disabled = false;
-            btn.textContent = "▶ Run Agents";
             if (data.error) {
                 var hint = "";
                 if (data.error.toLowerCase().includes("ollama")) {
@@ -1594,8 +1605,6 @@
             taPollTimer = setInterval(taPoll, 4000);
         })
         .catch(e => {
-            btn.disabled = false;
-            btn.textContent = "▶ Run Agents";
             taSetStatus("failed", "❌ Network error: " + e);
         });
     }
@@ -1607,14 +1616,12 @@
         .then(data => {
             if (data.status === "done") {
                 clearInterval(taPollTimer);
-                document.getElementById("ta-launch-btn").disabled = false;
                 taSetStatus("done", "✅ Analysis complete for <strong>" + data.symbol + "</strong>"
                     + " (" + (data.trade_date || "") + ")");
                 taRenderReports(data);
                 taLoadConsensus(data.symbol, data.decision);
             } else if (data.status === "failed") {
                 clearInterval(taPollTimer);
-                document.getElementById("ta-launch-btn").disabled = false;
                 taSetStatus("failed", "❌ " + taFriendlyError(data.error || "unknown error"));
             } else {
                 var step = data.status === "running" ? "Running agents…" : "Queued…";
