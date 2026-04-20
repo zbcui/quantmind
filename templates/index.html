@@ -550,6 +550,10 @@
     <div class="header-row">
         <h1 data-i18n="title">Kronos + Qlib Stock Analyzer</h1>
         <div style="display:flex;gap:8px;align-items:center;">
+            {% if current_user.is_authenticated %}
+            <span style="font-size:13px;color:#6b7280;">👤 {{ current_user.username }}</span>
+            <a href="/logout" class="lang-btn" style="font-size:12px;">Logout</a>
+            {% endif %}
             <a href="/portfolio" class="lang-btn" data-i18n="portfolio_btn">Portfolio →</a>
             <button class="lang-btn" id="lang-toggle" onclick="toggleLang()">中文</button>
             <button class="t0-btn-gear" onclick="openSettings()" title="LLM Settings">⚙</button>

@@ -1,14 +1,17 @@
 from __future__ import annotations
 
+import secrets
 from pathlib import Path
 
-from flask import Flask, jsonify, render_template, request, send_from_directory
+from flask import Flask, jsonify, redirect, render_template, request, send_from_directory, url_for
+from flask_login import LoginManager, UserMixin, current_user, login_required, login_user, logout_user
 
 from analysis_service import run_backtest_analysis, run_prediction_analysis
 from config import ToolkitConfig
 from data_sources import get_kline_data, get_last_close, get_realtime_quote, get_stock_name, get_t0_indicators, normalize_symbol
 from llm_service import analyze_t0, load_llm_config, save_llm_config
 from strategy_catalog import strategy_options
+import trade_storage
 import trading_agents_service as ta_service
 from trading_service import (
     execute_paper_trade,
@@ -21,6 +24,34 @@ from trading_service import (
 
 app = Flask(__name__)
 app.config["JSON_AS_ASCII"] = False
+app.secret_key = secrets.token_hex(32)
+
+# ── Flask-Login setup ──────────────────────────────────────────────────
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = "login"
+
+
+class User(UserMixin):
+    def __init__(self, id: int, username: str, email: str):
+        self.id = id
+        self.username = username
+        self.email = email
+
+
+@login_manager.user_loader
+def load_user(user_id: str) -> User | None:
+    config = ToolkitConfig()
+    trade_storage.ensure_storage(config)
+    row = trade_storage.get_user_by_id(config, int(user_id))
+    if row is None:
+        return None
+    return User(id=row["id"], username=row["username"], email=row["email"])
+
+
+def _uid() -> int:
+    """Shorthand to get the current logged-in user's id."""
+    return int(current_user.id)
 
 
 def default_form_data() -> dict:
@@ -63,11 +94,16 @@ def parse_form(payload: dict) -> dict:
     return data
 
 
-def relative_output_path(path: Path, config: ToolkitConfig) -> str:
-    return str(path.relative_to(config.output_dir)).replace("\\", "/")
+def relative_output_path(path: Path, config: ToolkitConfig, user_id: int = 1) -> str:
+    out_dir = config.user_output_dir(user_id)
+    try:
+        return str(path.relative_to(out_dir)).replace("\\", "/")
+    except ValueError:
+        # Fallback for legacy paths under global output_dir
+        return str(path.relative_to(config.output_dir)).replace("\\", "/")
 
 
-def execute_analysis(form_data: dict) -> dict:
+def execute_analysis(form_data: dict, *, user_id: int = 1) -> dict:
     config = ToolkitConfig()
     config.ensure_directories()
 
@@ -83,6 +119,7 @@ def execute_analysis(form_data: dict) -> dict:
         device=form_data["device"],
         strategy_key=form_data["strategy"],
         signal_threshold=form_data["signal_threshold"],
+        user_id=user_id,
     )
     backtest = run_backtest_analysis(
         config=config,
@@ -96,12 +133,14 @@ def execute_analysis(form_data: dict) -> dict:
         source=form_data["source"],
         device=form_data["device"],
         strategy_key=form_data["strategy"],
+        user_id=user_id,
     )
     market_price = prediction["summary"]["last_close"]
     paper_portfolio = get_paper_portfolio_summary(
         config=config,
         symbol=prediction["summary"]["symbol"],
         market_price=market_price,
+        user_id=user_id,
     )
     live_portfolio = sync_live_portfolio(
         config=config,
@@ -110,6 +149,7 @@ def execute_analysis(form_data: dict) -> dict:
         avg_price=form_data["live_avg_price"],
         available_cash=form_data["live_available_cash"],
         market_price=market_price,
+        user_id=user_id,
     )
 
     return {
@@ -117,26 +157,26 @@ def execute_analysis(form_data: dict) -> dict:
         "prediction": {
             "summary": prediction["summary"],
             "recommendation": prediction["recommendation"],
-            "forecast_image": relative_output_path(prediction["forecast_path"], config),
-            "summary_file": relative_output_path(prediction["summary_path"], config),
-            "prediction_file": relative_output_path(prediction["prediction_path"], config),
-            "history_file": relative_output_path(prediction["history_path"], config),
+            "forecast_image": relative_output_path(prediction["forecast_path"], config, user_id),
+            "summary_file": relative_output_path(prediction["summary_path"], config, user_id),
+            "prediction_file": relative_output_path(prediction["prediction_path"], config, user_id),
+            "history_file": relative_output_path(prediction["history_path"], config, user_id),
         },
         "backtest": {
             "summary": backtest["summary"],
-            "summary_file": relative_output_path(backtest["summary_path"], config),
-            "trades_file": relative_output_path(backtest["trades_path"], config),
-            "daily_file": relative_output_path(backtest["daily_path"], config),
+            "summary_file": relative_output_path(backtest["summary_path"], config, user_id),
+            "trades_file": relative_output_path(backtest["trades_path"], config, user_id),
+            "daily_file": relative_output_path(backtest["daily_path"], config, user_id),
         },
         "paper_portfolio": {
             "summary": paper_portfolio["portfolio"],
-            "state_file": relative_output_path(Path(paper_portfolio["paper_state_file"]), config),
-            "database_file": relative_output_path(Path(paper_portfolio["database_file"]), config),
+            "state_file": relative_output_path(Path(paper_portfolio["paper_state_file"]), config, user_id),
+            "database_file": relative_output_path(Path(paper_portfolio["database_file"]), config, user_id),
         },
         "live_portfolio": {
             "summary": live_portfolio["portfolio"],
-            "state_file": relative_output_path(Path(live_portfolio["live_state_file"]), config),
-            "database_file": relative_output_path(Path(live_portfolio["database_file"]), config),
+            "state_file": relative_output_path(Path(live_portfolio["live_state_file"]), config, user_id),
+            "database_file": relative_output_path(Path(live_portfolio["database_file"]), config, user_id),
         },
     }
 
@@ -152,7 +192,7 @@ def _best_execution_price(symbol: str, fallback_close: float) -> tuple[float, st
     return float(fallback_close), "last_close"
 
 
-def execute_paper_trade_action(form_data: dict, analysis_result: dict) -> dict:
+def execute_paper_trade_action(form_data: dict, analysis_result: dict, *, user_id: int = 1) -> dict:
     config = ToolkitConfig()
     recommendation = analysis_result["prediction"]["recommendation"]
     symbol = analysis_result["prediction"]["summary"]["symbol"]
@@ -163,6 +203,7 @@ def execute_paper_trade_action(form_data: dict, analysis_result: dict) -> dict:
         symbol=symbol,
         recommendation=recommendation,
         execution_price=execution_price,
+        user_id=user_id,
     )
     result["trade"]["price_source"] = "🔴 实时价" if price_source == "realtime" else "📅 收盘价"
 
@@ -180,7 +221,7 @@ def execute_paper_trade_action(form_data: dict, analysis_result: dict) -> dict:
     return result
 
 
-def execute_live_export_action(form_data: dict, analysis_result: dict) -> dict:
+def execute_live_export_action(form_data: dict, analysis_result: dict, *, user_id: int = 1) -> dict:
     config = ToolkitConfig()
     recommendation = analysis_result["prediction"]["recommendation"]
     symbol = analysis_result["prediction"]["summary"]["symbol"]
@@ -194,28 +235,86 @@ def execute_live_export_action(form_data: dict, analysis_result: dict) -> dict:
         current_shares=form_data["live_current_shares"],
         avg_price=form_data["live_avg_price"],
         available_cash=form_data["live_available_cash"],
+        user_id=user_id,
     )
     export["order"]["price_source"] = "🔴 实时价" if price_source == "realtime" else "📅 收盘价"
-    export["order_file_relative"] = relative_output_path(Path(export["order_file"]), config)
-    export["database_file_relative"] = relative_output_path(Path(export["database_file"]), config)
+    export["order_file_relative"] = relative_output_path(Path(export["order_file"]), config, user_id)
+    export["database_file_relative"] = relative_output_path(Path(export["database_file"]), config, user_id)
     return export
 
 
+# ── Auth routes ────────────────────────────────────────────────────────
+
+@app.route("/login", methods=["GET", "POST"])
+def login():
+    if current_user.is_authenticated:
+        return redirect(url_for("index"))
+    error = None
+    if request.method == "POST":
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "")
+        config = ToolkitConfig()
+        trade_storage.ensure_storage(config)
+        user_row = trade_storage.authenticate_user(config, email, password)
+        if user_row:
+            user = User(id=user_row["id"], username=user_row["username"], email=user_row["email"])
+            login_user(user)
+            next_page = request.args.get("next")
+            return redirect(next_page or url_for("index"))
+        error = "Invalid email or password"
+    return render_template("login.html", error=error)
+
+
+@app.route("/register", methods=["GET", "POST"])
+def register():
+    if current_user.is_authenticated:
+        return redirect(url_for("index"))
+    error = None
+    if request.method == "POST":
+        username = request.form.get("username", "").strip()
+        email = request.form.get("email", "").strip()
+        password = request.form.get("password", "")
+        if not username or not email or not password:
+            error = "All fields are required"
+        elif len(password) < 6:
+            error = "Password must be at least 6 characters"
+        else:
+            config = ToolkitConfig()
+            trade_storage.ensure_storage(config)
+            try:
+                user_row = trade_storage.create_user(config, username, email, password)
+                user = User(id=user_row["id"], username=user_row["username"], email=user_row["email"])
+                login_user(user)
+                return redirect(url_for("index"))
+            except ValueError as exc:
+                error = str(exc)
+    return render_template("register.html", error=error)
+
+
+@app.route("/logout")
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for("login"))
+
+
 @app.route("/", methods=["GET", "POST"])
+@login_required
 def index():
     form_data = default_form_data()
     result = None
     error = None
     trade_result = None
+    uid = _uid()
     if request.method == "POST":
         try:
             form_data = parse_form(request.form.to_dict())
-            result = execute_analysis(form_data)
+            result = execute_analysis(form_data, user_id=uid)
             action = request.form.get("action", "analyze")
             if action == "paper_trade":
-                trade_result = {"paper": execute_paper_trade_action(form_data, result)}
+                trade_result = {"paper": execute_paper_trade_action(form_data, result, user_id=uid)}
             elif action == "live_export":
-                trade_result = {"live": execute_live_export_action(form_data, result)}
+                trade_result = {"live": execute_live_export_action(form_data, result, user_id=uid)}
         except Exception as exc:
             error = str(exc)
     return render_template(
@@ -230,48 +329,54 @@ def index():
 
 
 @app.route("/api/analyze", methods=["POST"])
+@login_required
 def analyze_api():
     payload = request.get_json(silent=True) or {}
     try:
         form_data = parse_form(payload)
-        result = execute_analysis(form_data)
+        result = execute_analysis(form_data, user_id=_uid())
         return jsonify(result)
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
 
 
 @app.route("/api/paper-trade", methods=["POST"])
+@login_required
 def paper_trade_api():
     payload = request.get_json(silent=True) or {}
     try:
         form_data = parse_form(payload)
-        result = execute_analysis(form_data)
-        trade_result = execute_paper_trade_action(form_data, result)
+        result = execute_analysis(form_data, user_id=_uid())
+        trade_result = execute_paper_trade_action(form_data, result, user_id=_uid())
         return jsonify({"analysis": result, "paper_trade": trade_result})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
 
 
 @app.route("/api/live-export", methods=["POST"])
+@login_required
 def live_export_api():
     payload = request.get_json(silent=True) or {}
     try:
         form_data = parse_form(payload)
-        result = execute_analysis(form_data)
-        trade_result = execute_live_export_action(form_data, result)
+        result = execute_analysis(form_data, user_id=_uid())
+        trade_result = execute_live_export_action(form_data, result, user_id=_uid())
         return jsonify({"analysis": result, "live_export": trade_result})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
 
 
 @app.route("/outputs/<path:filename>")
+@login_required
 def outputs(filename: str):
     config = ToolkitConfig()
     config.ensure_directories()
-    return send_from_directory(config.output_dir, filename)
+    out_dir = config.user_output_dir(_uid())
+    return send_from_directory(out_dir, filename)
 
 
 @app.route("/api/stock-name/<symbol>")
+@login_required
 def stock_name_api(symbol: str):
     try:
         sym = normalize_symbol(symbol.strip())
@@ -282,6 +387,7 @@ def stock_name_api(symbol: str):
 
 
 @app.route("/api/realtime-quote/<symbol>")
+@login_required
 def realtime_quote_api(symbol: str):
     try:
         sym = normalize_symbol(symbol.strip())
@@ -294,6 +400,7 @@ def realtime_quote_api(symbol: str):
 
 
 @app.route("/api/kline/<symbol>")
+@login_required
 def kline_api(symbol: str):
     """Return OHLCV data for candlestick chart.
     ?period=daily|weekly|monthly|5min|15min|30min|60min
@@ -312,6 +419,7 @@ def kline_api(symbol: str):
 
 
 @app.route("/api/llm-config", methods=["GET", "POST"])
+@login_required
 def llm_config_api():
     if request.method == "POST":
         try:
@@ -326,6 +434,7 @@ def llm_config_api():
 
 
 @app.route("/api/t0-indicators/<symbol>")
+@login_required
 def t0_indicators_api(symbol: str):
     try:
         sym = normalize_symbol(symbol.strip())
@@ -339,6 +448,7 @@ def t0_indicators_api(symbol: str):
 
 
 @app.route("/api/t0-analysis", methods=["POST"])
+@login_required
 def t0_analysis_api():
     payload = request.get_json(silent=True) or {}
     try:
@@ -353,16 +463,19 @@ def t0_analysis_api():
 
 
 @app.route("/portfolio")
+@login_required
 def portfolio():
     return render_template("portfolio.html")
 
 
 @app.route("/api/portfolio-data")
+@login_required
 def portfolio_data_api():
     config = ToolkitConfig()
     config.ensure_directories()
-    paper_state = load_paper_state(config)
-    live_state = load_live_state(config)
+    uid = _uid()
+    paper_state = load_paper_state(config, user_id=uid)
+    live_state = load_live_state(config, user_id=uid)
 
     all_symbols: set[str] = set()
     for sym, pos in paper_state.get("positions", {}).items():
@@ -466,6 +579,7 @@ def portfolio_data_api():
 
 
 @app.route("/api/ta-analysis", methods=["POST"])
+@login_required
 def ta_analysis_api():
     """Fire a TradingAgents multi-agent analysis job. Returns job_id immediately."""
     payload = request.get_json(silent=True) or {}
@@ -485,13 +599,14 @@ def ta_analysis_api():
         if llm_err:
             return jsonify({"error": llm_err}), 400
 
-        job_id = ta_service.submit_job(config, symbol, trade_date or None, lang=lang)
+        job_id = ta_service.submit_job(config, symbol, trade_date or None, lang=lang, user_id=_uid())
         return jsonify({"job_id": job_id, "symbol": symbol, "status": "pending"})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
 
 
 @app.route("/api/ta-status/<job_id>")
+@login_required
 def ta_status_api(job_id: str):
     """Poll the status and result of a TradingAgents job."""
     config = ToolkitConfig()
@@ -502,12 +617,13 @@ def ta_status_api(job_id: str):
 
 
 @app.route("/api/ta-latest/<symbol>")
+@login_required
 def ta_latest_api(symbol: str):
     """Return the most recent completed TradingAgents analysis for a symbol."""
     try:
         sym = normalize_symbol(symbol.strip())
         config = ToolkitConfig()
-        result = ta_service.get_latest(config, sym)
+        result = ta_service.get_latest(config, sym, user_id=_uid())
         if result is None:
             return jsonify({"error": "No completed analysis found"}), 404
         return jsonify(result)
@@ -516,18 +632,21 @@ def ta_latest_api(symbol: str):
 
 
 @app.route("/api/consensus/<symbol>")
+@login_required
 def consensus_api(symbol: str):
     """Merge the latest Kronos recommendation with the latest TA decision."""
     try:
         sym = normalize_symbol(symbol.strip())
         config = ToolkitConfig()
-        ta_result = ta_service.get_latest(config, sym)
+        uid = _uid()
+        ta_result = ta_service.get_latest(config, sym, user_id=uid)
         if ta_result is None:
             return jsonify({"error": "No TA analysis found — run agent analysis first"}), 404
 
         # Try to load last Kronos recommendation from the most recent summary JSON
         kronos_action = "HOLD"
-        summary_path = config.output_dir / f"{sym}_summary.json"
+        out_dir = config.user_output_dir(uid)
+        summary_path = out_dir / f"{sym}_summary.json"
         if summary_path.exists():
             import json as _json
             try:
@@ -548,21 +667,20 @@ def consensus_api(symbol: str):
         return jsonify({"error": str(exc)}), 400
 
 
-# ── Watchlist API ──────────────────────────────────────────────────────
+# ── Watchlist API (SQLite-backed, per-user) ────────────────────────────
 
 @app.route("/api/watchlist", methods=["GET"])
+@login_required
 def watchlist_get():
-    path = Path(__file__).resolve().parent / "data" / "watchlist.json"
-    if path.exists():
-        import json as _json
-        return jsonify(_json.loads(path.read_text(encoding="utf-8")))
-    return jsonify({"items": []})
+    config = ToolkitConfig()
+    trade_storage.ensure_storage(config)
+    items = trade_storage.get_watchlist(config, user_id=_uid())
+    return jsonify({"items": items})
 
 
 @app.route("/api/watchlist", methods=["POST"])
+@login_required
 def watchlist_add():
-    import json as _json
-    path = Path(__file__).resolve().parent / "data" / "watchlist.json"
     payload = request.get_json(silent=True) or {}
     raw_symbol = payload.get("symbol", "").strip()
     if not raw_symbol:
@@ -573,36 +691,26 @@ def watchlist_add():
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
 
-    data = {"items": []}
-    if path.exists():
-        data = _json.loads(path.read_text(encoding="utf-8"))
-
-    if not any(item["symbol"] == sym for item in data["items"]):
-        data["items"].append({"symbol": sym, "name": name})
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(_json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    return jsonify(data)
+    config = ToolkitConfig()
+    trade_storage.ensure_storage(config)
+    trade_storage.add_watchlist_item(config, sym, name, user_id=_uid())
+    items = trade_storage.get_watchlist(config, user_id=_uid())
+    return jsonify({"items": items})
 
 
 @app.route("/api/watchlist/<symbol>", methods=["DELETE"])
+@login_required
 def watchlist_remove(symbol: str):
-    import json as _json
-    path = Path(__file__).resolve().parent / "data" / "watchlist.json"
     try:
         sym = normalize_symbol(symbol.strip())
     except Exception:
         sym = symbol.strip()
 
-    data = {"items": []}
-    if path.exists():
-        data = _json.loads(path.read_text(encoding="utf-8"))
-
-    data["items"] = [item for item in data["items"] if item["symbol"] != sym]
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(_json.dumps(data, ensure_ascii=False, indent=2), encoding="utf-8")
-
-    return jsonify(data)
+    config = ToolkitConfig()
+    trade_storage.ensure_storage(config)
+    trade_storage.remove_watchlist_item(config, sym, user_id=_uid())
+    items = trade_storage.get_watchlist(config, user_id=_uid())
+    return jsonify({"items": items})
 
 
 if __name__ == "__main__":

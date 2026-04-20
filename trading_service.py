@@ -5,6 +5,7 @@ from datetime import datetime
 
 from config import ToolkitConfig
 from trade_storage import (
+    DEFAULT_USER_ID,
     load_portfolio_state,
     record_live_order,
     record_live_sync,
@@ -38,9 +39,9 @@ def _save_json_state(path, state: dict) -> None:
     path.write_text(json.dumps(state, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def load_paper_state(config: ToolkitConfig) -> dict:
+def load_paper_state(config: ToolkitConfig, *, user_id: int = DEFAULT_USER_ID) -> dict:
     config.live_order_dir.mkdir(parents=True, exist_ok=True)
-    state = load_portfolio_state(config, "paper")
+    state = load_portfolio_state(config, "paper", user_id=user_id)
     if "initial_equity" not in state:
         state["initial_equity"] = float(state.get("initial_cash", 0.0))
     if "trade_history" not in state:
@@ -49,9 +50,9 @@ def load_paper_state(config: ToolkitConfig) -> dict:
     return state
 
 
-def load_live_state(config: ToolkitConfig) -> dict:
+def load_live_state(config: ToolkitConfig, *, user_id: int = DEFAULT_USER_ID) -> dict:
     config.live_order_dir.mkdir(parents=True, exist_ok=True)
-    state = load_portfolio_state(config, "live")
+    state = load_portfolio_state(config, "live", user_id=user_id)
     if "sync_history" not in state:
         state["sync_history"] = []
     _save_json_state(config.live_state_path, state)
@@ -92,8 +93,8 @@ def build_portfolio_summary(state: dict, symbol: str, market_price: float) -> di
     }
 
 
-def get_paper_portfolio_summary(config: ToolkitConfig, symbol: str, market_price: float) -> dict:
-    state = load_paper_state(config)
+def get_paper_portfolio_summary(config: ToolkitConfig, symbol: str, market_price: float, *, user_id: int = DEFAULT_USER_ID) -> dict:
+    state = load_paper_state(config, user_id=user_id)
     return {
         "portfolio": build_portfolio_summary(state, symbol, market_price),
         "paper_state_file": str(config.paper_state_path),
@@ -108,8 +109,10 @@ def sync_live_portfolio(
     avg_price: float,
     available_cash: float,
     market_price: float,
+    *,
+    user_id: int = DEFAULT_USER_ID,
 ) -> dict:
-    state = load_live_state(config)
+    state = load_live_state(config, user_id=user_id)
     state["cash"] = round(float(available_cash), 2)
     state["positions"][symbol] = {
         "shares": int(current_shares),
@@ -130,9 +133,9 @@ def sync_live_portfolio(
         "unrealized_pnl": round((float(market_price) - float(avg_price)) * int(current_shares), 2),
     }
     state["sync_history"].append(sync_record)
-    save_portfolio_state(config, "live", state)
-    record_live_sync(config, sync_record)
-    state = load_live_state(config)
+    save_portfolio_state(config, "live", state, user_id=user_id)
+    record_live_sync(config, sync_record, user_id=user_id)
+    state = load_live_state(config, user_id=user_id)
     return {
         "portfolio": build_portfolio_summary(state, symbol, market_price),
         "live_state_file": str(config.live_state_path),
@@ -145,8 +148,10 @@ def execute_paper_trade(
     symbol: str,
     recommendation: dict,
     execution_price: float,
+    *,
+    user_id: int = DEFAULT_USER_ID,
 ) -> dict:
-    state = load_paper_state(config)
+    state = load_paper_state(config, user_id=user_id)
     position = state["positions"].get(symbol, {"shares": 0, "avg_price": 0.0})
     action = recommendation["action"]
     timestamp = datetime.now().isoformat(timespec="seconds")
@@ -188,9 +193,9 @@ def execute_paper_trade(
     if status == "sold":
         trade["avg_buy_price"] = avg_buy_price
     state["trade_history"].append(trade)
-    save_portfolio_state(config, "paper", state)
-    record_paper_trade(config, trade)
-    state = load_paper_state(config)
+    save_portfolio_state(config, "paper", state, user_id=user_id)
+    record_paper_trade(config, trade, user_id=user_id)
+    state = load_paper_state(config, user_id=user_id)
     return {
         "trade": trade,
         "portfolio": build_portfolio_summary(state, symbol, execution_price),
@@ -207,8 +212,10 @@ def export_manual_live_order(
     current_shares: int,
     avg_price: float,
     available_cash: float,
+    *,
+    user_id: int = DEFAULT_USER_ID,
 ) -> dict:
-    config.live_order_dir.mkdir(parents=True, exist_ok=True)
+    order_dir = config.user_live_order_dir(user_id)
     live_summary = sync_live_portfolio(
         config=config,
         symbol=symbol,
@@ -216,6 +223,7 @@ def export_manual_live_order(
         avg_price=avg_price,
         available_cash=available_cash,
         market_price=execution_price,
+        user_id=user_id,
     )
 
     target_shares = current_shares
@@ -239,9 +247,9 @@ def export_manual_live_order(
         "note": "Manual live order export only. Review before sending to a broker.",
         "rationale": recommendation["rationale"],
     }
-    filename = config.live_order_dir / f"{symbol}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
+    filename = order_dir / f"{symbol}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
     filename.write_text(json.dumps(order, ensure_ascii=False, indent=2), encoding="utf-8")
-    record_live_order(config, order, str(filename))
+    record_live_order(config, order, str(filename), user_id=user_id)
     return {
         "order": order,
         "order_file": str(filename),
