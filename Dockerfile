@@ -5,9 +5,9 @@ ENV LC_ALL=C.UTF-8
 
 WORKDIR /app
 
-# System deps for matplotlib, pyarrow
+# System deps for matplotlib, pyarrow, git (for pip+git installs)
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc g++ libffi-dev && \
+    gcc g++ libffi-dev git && \
     rm -rf /var/lib/apt/lists/*
 
 COPY requirements.txt .
