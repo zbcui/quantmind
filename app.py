@@ -9,7 +9,7 @@ from flask_login import LoginManager, UserMixin, current_user, login_required, l
 from analysis_service import run_backtest_analysis, run_prediction_analysis
 from config import ToolkitConfig
 from data_sources import get_kline_data, get_last_close, get_realtime_quote, get_stock_name, get_t0_indicators, normalize_symbol
-from llm_service import analyze_t0, load_llm_config, save_llm_config
+from llm_service import analyze_t0
 from strategy_catalog import strategy_options
 import trade_storage
 import trading_agents_service as ta_service
@@ -421,16 +421,26 @@ def kline_api(symbol: str):
 @app.route("/api/llm-config", methods=["GET", "POST"])
 @login_required
 def llm_config_api():
+    config = ToolkitConfig()
+    trade_storage.ensure_storage(config)
+    uid = _uid()
     if request.method == "POST":
         try:
             cfg = request.get_json(silent=True) or {}
-            save_llm_config(cfg)
+            trade_storage.save_user_llm_config(config, uid, cfg)
             return jsonify({"ok": True})
         except Exception as exc:
             return jsonify({"error": str(exc)}), 400
-    cfg = load_llm_config()
-    cfg.pop("api_key", None)  # never send key back to browser
-    return jsonify(cfg)
+    # Merge global defaults with per-user overrides
+    from llm_service import load_llm_config as _load_global
+    merged = _load_global()
+    user_cfg = trade_storage.get_user_llm_config(config, uid)
+    for k, v in user_cfg.items():
+        if v not in (None, ""):
+            merged[k] = v
+    merged.pop("api_key", None)  # never send key back to browser
+    merged["has_api_key"] = bool(user_cfg.get("api_key", "").strip())
+    return jsonify(merged)
 
 
 @app.route("/api/t0-indicators/<symbol>")
@@ -456,7 +466,9 @@ def t0_analysis_api():
         indicators = get_t0_indicators(sym)
         if indicators is None:
             return jsonify({"error": "No intraday data available"}), 404
-        text = analyze_t0(sym, indicators)
+        config = ToolkitConfig()
+        user_llm = trade_storage.get_user_llm_config(config, _uid())
+        text = analyze_t0(sym, indicators, llm_config=user_llm or None)
         return jsonify({"symbol": sym, "indicators": indicators, "analysis": text})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
@@ -593,9 +605,14 @@ def ta_analysis_api():
         config = ToolkitConfig()
         config.ensure_directories()
 
-        # Quick pre-flight LLM check before queuing the job
-        from llm_service import load_llm_config as _llm_cfg
-        llm_err = ta_service._check_llm_reachable(_llm_cfg())
+        # Quick pre-flight LLM check using per-user config
+        from llm_service import load_llm_config as _load_global
+        user_llm = trade_storage.get_user_llm_config(config, _uid())
+        merged_llm = _load_global()
+        for k, v in user_llm.items():
+            if v not in (None, ""):
+                merged_llm[k] = v
+        llm_err = ta_service._check_llm_reachable(merged_llm)
         if llm_err:
             return jsonify({"error": llm_err}), 400
 

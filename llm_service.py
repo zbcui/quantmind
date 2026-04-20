@@ -63,13 +63,22 @@ def save_llm_config(config: dict) -> None:
     _CONFIG_PATH.write_text(json.dumps(merged, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
-def call_llm(system_prompt: str, user_prompt: str) -> str:
-    """Call the configured LLM and return the assistant message text."""
+def call_llm(system_prompt: str, user_prompt: str, *, config_override: dict | None = None) -> str:
+    """Call the configured LLM and return the assistant message text.
+    
+    If config_override is provided, it is merged on top of the global config
+    (per-user settings take precedence).
+    """
     import requests
     import urllib3
     urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
     config = load_llm_config()
+    if config_override:
+        # Only merge non-empty values from user config
+        for k, v in config_override.items():
+            if v not in (None, ""):
+                config[k] = v
     api_key     = config.get("api_key", "").strip()
     base_url    = config.get("base_url", "").rstrip("/")
     model       = config.get("model", "qwen2.5:7b")
@@ -150,7 +159,7 @@ _T0_SYSTEM = """你是一位专业的 A 股量化交易员，擅长日内做 T�
 回答简洁，不超过250字。"""
 
 
-def analyze_t0(symbol: str, indicators: dict) -> str:
+def analyze_t0(symbol: str, indicators: dict, *, llm_config: dict | None = None) -> str:
     ind = indicators
     user_prompt = f"""
 股票：{symbol}
@@ -166,5 +175,5 @@ MACD：{ind.get('macd', '—')}　Signal：{ind.get('macd_signal', '—')}　His
 今日量比（当日量/5日均量）：{ind.get('vol_ratio', '—')}
 综合信号：{ind.get('signal', '—')}
 """
-    return call_llm(_T0_SYSTEM, user_prompt.strip())
+    return call_llm(_T0_SYSTEM, user_prompt.strip(), config_override=llm_config)
 

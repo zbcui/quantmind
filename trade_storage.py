@@ -32,6 +32,7 @@ def ensure_storage(config: ToolkitConfig) -> None:
                 email TEXT NOT NULL UNIQUE,
                 password_hash TEXT NOT NULL,
                 display_name TEXT NOT NULL DEFAULT '',
+                llm_config_json TEXT NOT NULL DEFAULT '{}',
                 created_at TEXT NOT NULL
             );
 
@@ -162,14 +163,14 @@ def _ensure_default_user(config: ToolkitConfig) -> None:
         conn.commit()
 
 
-def create_user(config: ToolkitConfig, email: str, password: str, display_name: str = "") -> int:
+def create_user(config: ToolkitConfig, username: str, email: str, password: str) -> dict:
     with closing(_connect(config)) as conn:
         cursor = conn.execute(
             "INSERT INTO users (email, password_hash, display_name, created_at) VALUES (?, ?, ?, ?)",
-            (email, generate_password_hash(password), display_name or email.split("@")[0], datetime.now().isoformat(timespec="seconds")),
+            (email, generate_password_hash(password), username, datetime.now().isoformat(timespec="seconds")),
         )
         conn.commit()
-        return cursor.lastrowid
+        return {"id": cursor.lastrowid, "username": username, "email": email}
 
 
 def authenticate_user(config: ToolkitConfig, email: str, password: str) -> dict | None:
@@ -180,7 +181,7 @@ def authenticate_user(config: ToolkitConfig, email: str, password: str) -> dict 
         ).fetchone()
         if not row or not check_password_hash(row["password_hash"], password):
             return None
-        return {"id": row["id"], "email": row["email"], "display_name": row["display_name"]}
+        return {"id": row["id"], "email": row["email"], "username": row["display_name"]}
 
 
 def get_user_by_id(config: ToolkitConfig, user_id: int) -> dict | None:
@@ -191,7 +192,32 @@ def get_user_by_id(config: ToolkitConfig, user_id: int) -> dict | None:
         ).fetchone()
         if not row:
             return None
-        return {"id": row["id"], "email": row["email"], "display_name": row["display_name"]}
+        return {"id": row["id"], "email": row["email"], "username": row["display_name"]}
+
+
+def get_user_llm_config(config: ToolkitConfig, user_id: int) -> dict:
+    """Return the per-user LLM config as a dict (empty dict if not set)."""
+    with closing(_connect(config)) as conn:
+        row = conn.execute(
+            "SELECT llm_config_json FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+        if row and row["llm_config_json"]:
+            try:
+                return json.loads(row["llm_config_json"])
+            except (json.JSONDecodeError, TypeError):
+                pass
+    return {}
+
+
+def save_user_llm_config(config: ToolkitConfig, user_id: int, llm_cfg: dict) -> None:
+    """Persist per-user LLM config."""
+    with closing(_connect(config)) as conn:
+        conn.execute(
+            "UPDATE users SET llm_config_json = ? WHERE id = ?",
+            (json.dumps(llm_cfg, ensure_ascii=False), user_id),
+        )
+        conn.commit()
 
 
 # ---------------------------------------------------------------------------
@@ -208,6 +234,7 @@ def _migrate_schema(config: ToolkitConfig) -> None:
             ("live_syncs", "user_id", "INTEGER NOT NULL DEFAULT 1"),
             ("live_orders", "user_id", "INTEGER NOT NULL DEFAULT 1"),
             ("ta_analyses", "user_id", "INTEGER NOT NULL DEFAULT 1"),
+            ("users", "llm_config_json", "TEXT NOT NULL DEFAULT '{}'"),
         ]
         for table, column, col_type in migrations:
             try:
