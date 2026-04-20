@@ -1408,8 +1408,15 @@
             const provider = cfg.provider || "Ollama";
             document.getElementById("cfg-provider").value = provider;
             document.getElementById("cfg-base-url").value = cfg.base_url || "";
-            document.getElementById("cfg-api-key").value  = "";  // never pre-fill key
-            document.getElementById("cfg-model").value    = cfg.model || "";
+            // Show masked key if one is saved, empty if not
+            var keyField = document.getElementById("cfg-api-key");
+            keyField.value = cfg.has_api_key ? "••••••••••••" : "";
+            keyField.dataset.masked = cfg.has_api_key ? "1" : "0";
+            keyField.addEventListener("focus", function onFocus() {
+                if (this.dataset.masked === "1") { this.value = ""; this.dataset.masked = "0"; }
+                this.removeEventListener("focus", onFocus);
+            });
+            document.getElementById("cfg-model").value = cfg.model || "";
             document.getElementById("ollama-hint").style.display = provider === "Ollama" ? "block" : "none";
         });
         document.getElementById("settings-modal").classList.add("open");
@@ -1425,18 +1432,21 @@
             base_url: document.getElementById("cfg-base-url").value.trim(),
             model:    document.getElementById("cfg-model").value.trim(),
         };
-        const key = document.getElementById("cfg-api-key").value.trim();
-        if (key) cfg.api_key = key;
+        var keyField = document.getElementById("cfg-api-key");
+        var key = keyField.value.trim();
+        // Only send key if user actually typed a new one (not the mask)
+        if (key && keyField.dataset.masked !== "1") cfg.api_key = key;
         fetch("/api/llm-config", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify(cfg),
-        }).then(() => closeSettings());
+        }).then(() => {
+            closeSettings();
+            alert("✅ Settings saved!");
+        });
     }
 
-    document.getElementById("settings-modal").addEventListener("click", function(e) {
-        if (e.target === this) closeSettings();
-    });
+    // Backdrop click — do NOT close (prevent accidental data loss)
 
     function fmtInd(v) { return v !== null && v !== undefined ? v : "—"; }
 
