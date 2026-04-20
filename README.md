@@ -1,3 +1,12 @@
+---
+title: QuantMind AI Helper
+emoji: 🔮
+colorFrom: indigo
+colorTo: purple
+sdk: docker
+app_port: 7080
+---
+
 # QuantMind
 
 > **Quant engine meets multi-agent intelligence.**
