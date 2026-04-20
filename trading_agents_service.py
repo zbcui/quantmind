@@ -229,7 +229,14 @@ def _instance_key(cfg: dict) -> str:
 def _run_job(job_id: str, symbol: str, trade_date: str, config: ToolkitConfig, *, lang: str = "en", user_id: int = 1) -> None:
     """Execute a TradingAgents analysis in a background thread."""
     from trade_storage import update_ta_job
-    from tradingagents.graph.trading_graph import TradingAgentsGraph
+
+    try:
+        from tradingagents.graph.trading_graph import TradingAgentsGraph
+    except ImportError as exc:
+        update_ta_job(config, job_id, status="failed",
+                      error="TradingAgents library is not installed. "
+                            "Install it with: pip install tradingagents")
+        return
 
     try:
         update_ta_job(config, job_id, status="running")
