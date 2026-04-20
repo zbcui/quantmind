@@ -272,6 +272,24 @@
         .t0-btn-primary { background: #4338ca; color: #fff; }
         .t0-btn-secondary { background: #f3f4f6; color: #374151; border: 1px solid #e5e7eb; }
         .t0-btn-gear { background: none; border: none; font-size: 18px; cursor: pointer; color: #6b7280; padding: 0 4px; }
+        .settings-btn {
+            background: linear-gradient(135deg, #4338ca, #6366f1); color: #fff;
+            border: none; padding: 6px 16px; border-radius: 8px; font-size: 13px;
+            font-weight: 700; cursor: pointer; transition: all .15s; letter-spacing: 0.5px;
+        }
+        .settings-btn:hover { opacity: .88; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(67,56,202,.35); }
+        .settings-tabs {
+            display: flex; gap: 0; margin: -24px -24px 16px; border-bottom: 2px solid #e5e7eb;
+            background: #f9fafb; border-radius: 14px 14px 0 0; overflow: hidden;
+        }
+        .settings-tab {
+            flex: 1; padding: 12px 16px; text-align: center; font-size: 14px; font-weight: 600;
+            cursor: pointer; color: #6b7280; border: none; background: transparent; transition: all .15s;
+        }
+        .settings-tab:hover { background: #f3f4f6; color: #374151; }
+        .settings-tab.active { color: #4338ca; background: #fff; border-bottom: 2px solid #4338ca; margin-bottom: -2px; }
+        .settings-tab-content { display: none; }
+        .settings-tab-content.active { display: block; }
         .t0-auto-label { font-size: 12px; color: #6b7280; display: flex; align-items: center; gap: 4px; }
 
         /* Broker order button */
@@ -579,8 +597,7 @@
             {% endif %}
             <a href="/portfolio" class="lang-btn" data-i18n="portfolio_btn">Portfolio →</a>
             <button class="lang-btn" id="lang-toggle" onclick="toggleLang()">中文</button>
-            <button class="t0-btn-gear" onclick="openSettings()" title="LLM Settings">⚙</button>
-            <button class="t0-btn-gear" onclick="openBrokerModal()" title="Broker Settings">🏦</button>
+            <button class="settings-btn" onclick="openSettings()" title="Settings">⚙ 设置</button>
         </div>
     </div>
     <p class="subtitle" data-i18n="subtitle">Enter a stock code to run forecast, backtest, paper trading, and manual live order export from the browser.</p>
@@ -625,79 +642,80 @@
         </div>
     </div>
 
-    <!-- LLM Settings Modal -->
+    <!-- Unified Settings Modal (LLM + Broker tabs) -->
     <div class="modal-backdrop" id="settings-modal">
         <div class="modal">
-            <h3 data-i18n="settings_title">⚙ LLM API 设置</h3>
-            <label><span data-i18n="settings_provider">服务商</span>
-                <select id="cfg-provider" onchange="onProviderChange(this.value)">
-                    <option value="Ollama">🏠 Ollama（本地，推荐）</option>
-                    <option value="DeepSeek">DeepSeek</option>
-                    <option value="OpenAI">OpenAI</option>
-                    <option value="Qwen">通义千问 (Qwen)</option>
-                    <option value="Custom">自定义</option>
-                </select>
-            </label>
-            <div id="ollama-hint" style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:8px 10px;font-size:12px;color:#713f12;margin:4px 0 8px;">
-                💡 <b>Ollama 本地部署（无需外网）：</b><br>
-                1. 下载安装：<b>https://ollama.com</b><br>
-                2. 启动：<code>ollama serve</code><br>
-                3. 拉取模型：<code>ollama pull qwen2.5:7b</code>
+            <div class="settings-tabs">
+                <button class="settings-tab active" onclick="switchSettingsTab('llm')">🤖 AI / LLM</button>
+                <button class="settings-tab" onclick="switchSettingsTab('broker')">🏦 券商交易</button>
             </div>
-            <label><span data-i18n="settings_base_url">API Base URL</span>
-                <input id="cfg-base-url" type="text" placeholder="http://localhost:11434">
-            </label>
-            <label><span data-i18n="settings_api_key">API Key（本地 Ollama 无需填写）</span>
-                <input id="cfg-api-key" type="password" placeholder="外部 API 才需要填写">
-            </label>
-            <label><span data-i18n="settings_model">模型</span>
-                <input id="cfg-model" type="text" placeholder="qwen2.5:7b">
-            </label>
+
+            <!-- LLM Tab -->
+            <div class="settings-tab-content active" id="tab-llm">
+                <label><span data-i18n="settings_provider">服务商</span>
+                    <select id="cfg-provider" onchange="onProviderChange(this.value)">
+                        <option value="Ollama">🏠 Ollama（本地，推荐）</option>
+                        <option value="DeepSeek">DeepSeek</option>
+                        <option value="OpenAI">OpenAI</option>
+                        <option value="Qwen">通义千问 (Qwen)</option>
+                        <option value="Custom">自定义</option>
+                    </select>
+                </label>
+                <div id="ollama-hint" style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:8px 10px;font-size:12px;color:#713f12;margin:4px 0 8px;">
+                    💡 <b>Ollama 本地部署（无需外网）：</b><br>
+                    1. 下载安装：<b>https://ollama.com</b><br>
+                    2. 启动：<code>ollama serve</code><br>
+                    3. 拉取模型：<code>ollama pull qwen2.5:7b</code>
+                </div>
+                <label><span data-i18n="settings_base_url">API Base URL</span>
+                    <input id="cfg-base-url" type="text" placeholder="http://localhost:11434">
+                </label>
+                <label><span data-i18n="settings_api_key">API Key（本地 Ollama 无需填写）</span>
+                    <input id="cfg-api-key" type="password" placeholder="外部 API 才需要填写">
+                </label>
+                <label><span data-i18n="settings_model">模型</span>
+                    <input id="cfg-model" type="text" placeholder="qwen2.5:7b">
+                </label>
+            </div>
+
+            <!-- Broker Tab -->
+            <div class="settings-tab-content" id="tab-broker">
+                <div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:8px 10px;font-size:12px;color:#713f12;margin:0 0 10px;">
+                    ⚠️ <b>仅限本地部署使用</b>：需在本机安装并启动 MiniQMT 客户端。<br>
+                    云端（HF Spaces）模式下此功能不可用。
+                </div>
+                <label>
+                    <span style="display:flex;align-items:center;gap:6px;">
+                        <input type="checkbox" id="broker-enabled" style="width:auto;margin:0;">
+                        启用实盘交易
+                    </span>
+                </label>
+                <label>券商名称
+                    <input id="broker-name" type="text" placeholder="如：国金证券、华泰证券">
+                </label>
+                <label>资金账号
+                    <input id="broker-account" type="text" placeholder="券商资金账号">
+                </label>
+                <label>MiniQMT 路径
+                    <input id="broker-qmt-path" type="text" placeholder="C:\国金QMT交易端\userdata_mini">
+                </label>
+                <label>单笔最大金额 (¥)
+                    <input id="broker-max-value" type="number" value="50000" min="1000" step="1000">
+                </label>
+                <label>每日最大下单次数
+                    <input id="broker-max-daily" type="number" value="20" min="1">
+                </label>
+                <label>
+                    <span style="display:flex;align-items:center;gap:6px;">
+                        <input type="checkbox" id="broker-confirm" checked style="width:auto;margin:0;">
+                        下单前需要确认
+                    </span>
+                </label>
+            </div>
+
             <div class="modal-footer">
                 <button class="t0-btn t0-btn-secondary" onclick="closeSettings()" data-i18n="settings_cancel">取消</button>
-                <button class="t0-btn t0-btn-primary" onclick="saveSettings()" data-i18n="settings_save">保存</button>
-            </div>
-        </div>
-    </div>
-
-    <!-- Broker Settings Modal -->
-    <div class="modal-backdrop" id="broker-modal">
-        <div class="modal">
-            <h3>🏦 券商交易设置（MiniQMT）</h3>
-            <div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:8px 10px;font-size:12px;color:#713f12;margin:0 0 10px;">
-                ⚠️ <b>仅限本地部署使用</b>：需在本机安装并启动 MiniQMT 客户端。<br>
-                云端（HF Spaces）模式下此功能不可用。
-            </div>
-            <label>
-                <span style="display:flex;align-items:center;gap:6px;">
-                    <input type="checkbox" id="broker-enabled" style="width:auto;margin:0;">
-                    启用实盘交易
-                </span>
-            </label>
-            <label>券商名称
-                <input id="broker-name" type="text" placeholder="如：国金证券、华泰证券">
-            </label>
-            <label>资金账号
-                <input id="broker-account" type="text" placeholder="券商资金账号">
-            </label>
-            <label>MiniQMT 路径
-                <input id="broker-qmt-path" type="text" placeholder="C:\国金QMT交易端\userdata_mini">
-            </label>
-            <label>单笔最大金额 (¥)
-                <input id="broker-max-value" type="number" value="50000" min="1000" step="1000">
-            </label>
-            <label>每日最大下单次数
-                <input id="broker-max-daily" type="number" value="20" min="1">
-            </label>
-            <label>
-                <span style="display:flex;align-items:center;gap:6px;">
-                    <input type="checkbox" id="broker-confirm" checked style="width:auto;margin:0;">
-                    下单前需要确认
-                </span>
-            </label>
-            <div class="modal-footer">
-                <button class="t0-btn t0-btn-secondary" onclick="closeBrokerModal()">取消</button>
-                <button class="t0-btn t0-btn-primary" onclick="saveBrokerConfig()">保存</button>
+                <button class="t0-btn t0-btn-primary" onclick="saveAllSettings()" data-i18n="settings_save">保存</button>
             </div>
         </div>
     </div>
@@ -1514,12 +1532,12 @@
         document.getElementById("ollama-hint").style.display = val === "Ollama" ? "block" : "none";
     }
 
-    function openSettings() {
+    function openSettings(tab) {
+        // Load LLM config
         fetch("/api/llm-config").then(r => r.json()).then(cfg => {
             const provider = cfg.provider || "Ollama";
             document.getElementById("cfg-provider").value = provider;
             document.getElementById("cfg-base-url").value = cfg.base_url || "";
-            // Show masked key if one is saved, empty if not
             var keyField = document.getElementById("cfg-api-key");
             keyField.value = cfg.has_api_key ? "••••••••••••" : "";
             keyField.dataset.masked = cfg.has_api_key ? "1" : "0";
@@ -1530,35 +1548,7 @@
             document.getElementById("cfg-model").value = cfg.model || "";
             document.getElementById("ollama-hint").style.display = provider === "Ollama" ? "block" : "none";
         });
-        document.getElementById("settings-modal").classList.add("open");
-    }
-
-    function closeSettings() {
-        document.getElementById("settings-modal").classList.remove("open");
-    }
-
-    function saveSettings() {
-        const cfg = {
-            provider: document.getElementById("cfg-provider").value,
-            base_url: document.getElementById("cfg-base-url").value.trim(),
-            model:    document.getElementById("cfg-model").value.trim(),
-        };
-        var keyField = document.getElementById("cfg-api-key");
-        var key = keyField.value.trim();
-        // Only send key if user actually typed a new one (not the mask)
-        if (key && keyField.dataset.masked !== "1") cfg.api_key = key;
-        fetch("/api/llm-config", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(cfg),
-        }).then(() => {
-            closeSettings();
-            alert("✅ Settings saved!");
-        });
-    }
-
-    // ── Broker settings modal ──────────────────────────────────────
-    function openBrokerModal() {
+        // Load broker config
         fetch("/api/broker-config").then(r => r.json()).then(cfg => {
             document.getElementById("broker-enabled").checked = !!cfg.enabled;
             document.getElementById("broker-name").value = cfg.broker_name || "";
@@ -1568,13 +1558,35 @@
             document.getElementById("broker-max-daily").value = cfg.max_daily_orders || 20;
             document.getElementById("broker-confirm").checked = cfg.require_confirmation !== false;
         });
-        document.getElementById("broker-modal").classList.add("open");
+        switchSettingsTab(tab || "llm");
+        document.getElementById("settings-modal").classList.add("open");
     }
-    function closeBrokerModal() {
-        document.getElementById("broker-modal").classList.remove("open");
+
+    function closeSettings() {
+        document.getElementById("settings-modal").classList.remove("open");
     }
-    function saveBrokerConfig() {
-        const cfg = {
+
+    function switchSettingsTab(tab) {
+        document.querySelectorAll(".settings-tab").forEach(function(el, i) {
+            el.classList.toggle("active", (i === 0 && tab === "llm") || (i === 1 && tab === "broker"));
+        });
+        document.getElementById("tab-llm").classList.toggle("active", tab === "llm");
+        document.getElementById("tab-broker").classList.toggle("active", tab === "broker");
+    }
+
+    function saveAllSettings() {
+        // Save LLM config
+        const llmCfg = {
+            provider: document.getElementById("cfg-provider").value,
+            base_url: document.getElementById("cfg-base-url").value.trim(),
+            model:    document.getElementById("cfg-model").value.trim(),
+        };
+        var keyField = document.getElementById("cfg-api-key");
+        var key = keyField.value.trim();
+        if (key && keyField.dataset.masked !== "1") llmCfg.api_key = key;
+
+        // Save broker config
+        const brokerCfg = {
             enabled: document.getElementById("broker-enabled").checked,
             broker_name: document.getElementById("broker-name").value.trim(),
             account_id: document.getElementById("broker-account").value.trim(),
@@ -1583,13 +1595,13 @@
             max_daily_orders: parseInt(document.getElementById("broker-max-daily").value) || 20,
             require_confirmation: document.getElementById("broker-confirm").checked,
         };
-        fetch("/api/broker-config", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify(cfg),
-        }).then(() => {
-            closeBrokerModal();
-            alert("✅ 券商设置已保存！");
+
+        Promise.all([
+            fetch("/api/llm-config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(llmCfg) }),
+            fetch("/api/broker-config", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(brokerCfg) }),
+        ]).then(() => {
+            closeSettings();
+            alert("✅ 设置已保存！");
         });
     }
 
