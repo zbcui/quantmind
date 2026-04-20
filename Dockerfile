@@ -2,6 +2,8 @@ FROM python:3.12-slim
 
 ENV LANG=C.UTF-8
 ENV LC_ALL=C.UTF-8
+# Store DB + outputs on HF persistent volume so data survives redeploys
+ENV KRONOS_TOOLKIT_OUTPUT=/data
 
 WORKDIR /app
 
@@ -16,7 +18,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY . .
 
 # Ensure output & data dirs exist
-RUN mkdir -p outputs data
+RUN mkdir -p /data data
 
 EXPOSE 7080
 
