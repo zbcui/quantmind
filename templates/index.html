@@ -274,6 +274,29 @@
         .t0-btn-gear { background: none; border: none; font-size: 18px; cursor: pointer; color: #6b7280; padding: 0 4px; }
         .t0-auto-label { font-size: 12px; color: #6b7280; display: flex; align-items: center; gap: 4px; }
 
+        /* Broker order button */
+        .broker-exec-btn {
+            background: linear-gradient(135deg, #dc2626, #b91c1c); color: #fff;
+            border: none; padding: 8px 18px; border-radius: 8px; font-size: 13px;
+            font-weight: 700; cursor: pointer; transition: opacity .15s;
+        }
+        .broker-exec-btn:hover { opacity: .85; }
+        .broker-exec-btn:disabled { opacity: .5; cursor: not-allowed; }
+        .broker-order-panel {
+            background: #fef2f2; border: 1px solid #fecaca; border-radius: 10px;
+            padding: 16px; margin-top: 14px;
+        }
+        .broker-order-panel h3 { margin: 0 0 10px; font-size: 15px; color: #991b1b; }
+        .broker-order-panel label { display: block; margin-bottom: 8px; font-size: 13px; }
+        .broker-order-panel input, .broker-order-panel select {
+            width: 100%; padding: 6px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 13px; box-sizing: border-box;
+        }
+        .broker-order-panel .broker-row { display: flex; gap: 10px; flex-wrap: wrap; }
+        .broker-order-panel .broker-row > label { flex: 1; min-width: 120px; }
+        .broker-order-result { margin-top: 10px; padding: 10px; border-radius: 8px; font-size: 13px; }
+        .broker-order-result.ok { background: #dcfce7; border: 1px solid #86efac; color: #166534; }
+        .broker-order-result.err { background: #fee2e2; border: 1px solid #fca5a5; color: #991b1b; }
+
         /* Settings Modal */
         .modal-backdrop {
             display: none; position: fixed; inset: 0;
@@ -594,6 +617,7 @@
         <div class="t0-actions">
             <button class="t0-btn t0-btn-primary" id="combined-ai-btn" onclick="runCombinedAnalysis()" data-i18n="t0_btn_ai">🤖 AI 解读</button>
             <button id="t0-refresh-btn" class="t0-btn t0-btn-secondary" onclick="refreshT0Indicators(true)" data-i18n="t0_btn_refresh">↻ 刷新指标</button>
+            <button class="broker-exec-btn" id="broker-signal-btn" style="display:none;" onclick="executeBrokerFromSignal()">🏦 执行实盘下单</button>
             <label class="t0-auto-label">
                 <input type="checkbox" id="t0-auto" onchange="toggleT0Auto(this.checked)">
                 <span data-i18n="t0_auto">每分钟自动刷新</span>
@@ -742,6 +766,7 @@
                 <button type="submit" name="action" value="analyze" data-i18n="btn_analyze">Run Analysis</button>
                 <button type="submit" name="action" value="paper_trade" data-i18n="btn_paper">Run + Execute Paper Trade</button>
                 <button type="submit" name="action" value="live_export" data-i18n="btn_live">Run + Export Live Order</button>
+                <button type="button" class="broker-exec-btn" onclick="openManualOrderPanel()" style="font-size:12px;">🏦 手动下单</button>
             </div>
         </form>
         <div class="full-row" style="margin-top: 14px;">
@@ -931,6 +956,7 @@
             <a href="/outputs/{{ trade_result.live.order_file_relative }}" target="_blank" data-i18n="link_order_json">Order JSON</a>
             <a href="/outputs/live_portfolio.json" target="_blank" data-i18n="link_live_state">Live Portfolio State</a>
             <a href="/outputs/{{ trade_result.live.database_file_relative }}" target="_blank" data-i18n="link_db">Trading SQLite DB</a>
+            <button class="broker-exec-btn" style="margin-left:8px;" onclick="executeBrokerFromLiveExport()">🏦 一键下单到券商</button>
         </div>
     </div>
     {% endif %}
@@ -962,6 +988,10 @@
 
     <!-- Consensus verdict (hidden until result arrives) -->
     <div id="ta-consensus" style="display:none;"></div>
+    <!-- Broker execute from consensus (shown when BUY/SELL signal) -->
+    <div id="ta-broker-action" style="display:none; margin-top:10px; text-align:center;">
+        <button class="broker-exec-btn" onclick="executeBrokerFromConsensus()">🏦 按信号执行实盘下单</button>
+    </div>
 
     <!-- Agent report accordions -->
     <div class="ta-reports" id="ta-reports">
@@ -972,7 +1002,45 @@
     </div>
 </div>
 </div>
-</div> <!-- /app-main -->
+
+<!-- ── Manual Broker Order Panel ─────────────────────────────────────── -->
+<div class="container" style="padding-top:0;">
+<div class="broker-order-panel" id="manual-order-panel" style="display:none;">
+    <h3>🏦 券商手动下单</h3>
+    <div class="broker-row">
+        <label>股票代码
+            <input id="bo-symbol" type="text" placeholder="SH601169 或 601169">
+        </label>
+        <label>方向
+            <select id="bo-side">
+                <option value="BUY">买入</option>
+                <option value="SELL">卖出</option>
+            </select>
+        </label>
+    </div>
+    <div class="broker-row">
+        <label>价格 (¥)
+            <input id="bo-price" type="number" step="0.001" min="0" placeholder="委托价格">
+        </label>
+        <label>数量 (股)
+            <input id="bo-volume" type="number" step="100" min="100" placeholder="必须为100整数倍">
+        </label>
+        <label>委托类型
+            <select id="bo-type">
+                <option value="LIMIT">限价单</option>
+                <option value="MARKET">市价单</option>
+            </select>
+        </label>
+    </div>
+    <div style="margin-top:10px; display:flex; gap:8px; align-items:center;">
+        <button class="broker-exec-btn" id="bo-submit" onclick="submitManualOrder()">🏦 确认下单</button>
+        <button class="t0-btn t0-btn-secondary" onclick="closeManualOrderPanel()">取消</button>
+        <button class="t0-btn t0-btn-secondary" onclick="loadBrokerOrders()">📋 委托记录</button>
+    </div>
+    <div id="bo-result"></div>
+    <div id="bo-orders" style="margin-top:10px;"></div>
+</div>
+</div>
 </div> <!-- /app-layout -->
 
 <script>
@@ -1529,15 +1597,24 @@
 
     function fmtInd(v) { return v !== null && v !== undefined ? v : "—"; }
 
+    var _lastT0Signal = null;
+    var _lastT0Price = null;
     function renderT0Indicators(ind) {
         const wrap = document.getElementById("t0-wrap");
         wrap.classList.add("visible");
 
         const sigEl = document.getElementById("t0-signal");
         sigEl.textContent = ind.signal || "—";
-        sigEl.className = "t0-signal " +
-            (ind.signal && ind.signal.includes("买") ? "buy" :
-             ind.signal && ind.signal.includes("卖") ? "sell" : "hold");
+        var isBuy = ind.signal && ind.signal.includes("买");
+        var isSell = ind.signal && ind.signal.includes("卖");
+        sigEl.className = "t0-signal " + (isBuy ? "buy" : isSell ? "sell" : "hold");
+
+        _lastT0Signal = isBuy ? "BUY" : isSell ? "SELL" : "HOLD";
+        _lastT0Price = ind.vwap || 0;
+
+        // Show/hide broker execute button based on signal
+        var bsBtn = document.getElementById("broker-signal-btn");
+        if (bsBtn) bsBtn.style.display = (isBuy || isSell) ? "inline-block" : "none";
 
         const vwapDev = ind.vwap_dev_pct;
         const devColor = vwapDev > 0 ? "up" : vwapDev < 0 ? "down" : "";
@@ -1768,7 +1845,9 @@
         bar.innerHTML = spinner + "<span>" + text + "</span>";
     }
 
+    var _lastConsensusData = null;
     function taRenderConsensus(data) {
+        _lastConsensusData = data;
         var c   = data.consensus || {};
         var box = document.getElementById("ta-consensus");
         var conf = c.confidence || "none";
@@ -1791,6 +1870,15 @@
                 '</div>' +
                 '<div class="consensus-meta" style="flex:1;">' + (c.description || "") + '</div>' +
             '</div>';
+
+        // Show broker execute button if consensus is BUY or SELL
+        var action = (c.label || "").toUpperCase();
+        var brokerBtn = document.getElementById("ta-broker-action");
+        if (action.includes("BUY") || action.includes("SELL") || action.includes("买") || action.includes("卖")) {
+            brokerBtn.style.display = "block";
+        } else {
+            brokerBtn.style.display = "none";
+        }
     }
 
     var TA_REPORT_DEFS = [
@@ -1936,6 +2024,178 @@
 
     // Load watchlist on page init
     loadWatchlist();
+
+    // ── Broker Order Execution Functions ─────────────────────────────────
+
+    function _brokerConfirm(msg) {
+        return confirm("⚠️ 实盘交易确认\n\n" + msg + "\n\n确认下单？");
+    }
+
+    function _showBrokerResult(elId, result) {
+        var el = document.getElementById(elId);
+        if (!el) return;
+        var ok = result.status === "SUBMITTED" || result.status === "FILLED";
+        el.className = "broker-order-result " + (ok ? "ok" : "err");
+        el.innerHTML = (ok ? "✅ " : "❌ ") + (result.message || JSON.stringify(result));
+        el.style.display = "block";
+    }
+
+    // Trigger 1: Execute from T0 signal
+    function executeBrokerFromSignal() {
+        if (!t0CurrentSymbol || !_lastT0Signal || _lastT0Signal === "HOLD") return;
+        var action = _lastT0Signal;
+        var price = _lastT0Price || 0;
+        var msg = action + " " + t0CurrentSymbol + " @ ¥" + price.toFixed(3);
+        if (!_brokerConfirm(msg)) return;
+
+        var btn = document.getElementById("broker-signal-btn");
+        btn.disabled = true; btn.textContent = "⏳ 下单中...";
+
+        fetch("/api/broker-signal", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ symbol: t0CurrentSymbol, action: action, price: price }),
+        })
+        .then(r => r.json())
+        .then(result => {
+            btn.disabled = false; btn.textContent = "🏦 执行实盘下单";
+            alert((result.status === "SUBMITTED" ? "✅ " : "❌ ") + result.message);
+        })
+        .catch(e => {
+            btn.disabled = false; btn.textContent = "🏦 执行实盘下单";
+            alert("❌ 下单失败: " + e);
+        });
+    }
+
+    // Trigger 1b: Execute from consensus (TA + Kronos combined)
+    function executeBrokerFromConsensus() {
+        if (!_lastConsensusData) return;
+        var c = _lastConsensusData.consensus || {};
+        var label = (c.label || "").toUpperCase();
+        var action = label.includes("BUY") || label.includes("买") ? "BUY"
+                   : label.includes("SELL") || label.includes("卖") ? "SELL" : "HOLD";
+        if (action === "HOLD") { alert("当前信号为 HOLD，不执行交易"); return; }
+
+        var symbol = t0CurrentSymbol || (document.getElementById("ta-symbol").value || "").trim();
+        var price = _lastT0Price || 0;
+        var msg = "综合信号: " + action + "\n" + symbol + " @ ¥" + price.toFixed(3)
+                + "\nKronos: " + (_lastConsensusData.kronos_action || "—")
+                + " | AI Agents: " + (_lastConsensusData.ta_decision || "—");
+        if (!_brokerConfirm(msg)) return;
+
+        fetch("/api/broker-signal", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ symbol: symbol, action: action, price: price }),
+        })
+        .then(r => r.json())
+        .then(result => { alert((result.status === "SUBMITTED" ? "✅ " : "❌ ") + result.message); })
+        .catch(e => { alert("❌ 下单失败: " + e); });
+    }
+
+    // Trigger 2: Execute from live export order
+    function executeBrokerFromLiveExport() {
+        {% if trade_result and trade_result.live %}
+        var order = {{ trade_result.live.order | tojson }};
+        var symbol = order.symbol || order.stock_code || "";
+        var side = (order.action || order.side || "").toUpperCase();
+        if (side.includes("BUY") || side.includes("买")) side = "BUY";
+        else if (side.includes("SELL") || side.includes("卖")) side = "SELL";
+        else { alert("无法识别订单方向: " + (order.action || order.side || "")); return; }
+        var price = parseFloat(order.price || order.target_price || 0);
+        var volume = parseInt(order.order_shares_delta || order.shares || order.volume || 0);
+        if (volume < 0) volume = Math.abs(volume);
+
+        var msg = side + " " + symbol + "\n数量: " + volume + "股\n价格: ¥" + price.toFixed(3);
+        if (!_brokerConfirm(msg)) return;
+
+        fetch("/api/broker-order", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ symbol: symbol, side: side, volume: volume, price: price }),
+        })
+        .then(r => r.json())
+        .then(result => { alert((result.status === "SUBMITTED" ? "✅ " : "❌ ") + result.message); })
+        .catch(e => { alert("❌ 下单失败: " + e); });
+        {% else %}
+        alert("无实盘导出订单数据");
+        {% endif %}
+    }
+
+    // Trigger 3: Manual order panel
+    function openManualOrderPanel() {
+        var panel = document.getElementById("manual-order-panel");
+        panel.style.display = "block";
+        var sym = (document.getElementById("symbol").value || "").trim();
+        if (sym) document.getElementById("bo-symbol").value = sym;
+        document.getElementById("bo-result").innerHTML = "";
+        panel.scrollIntoView({ behavior: "smooth", block: "center" });
+    }
+    function closeManualOrderPanel() {
+        document.getElementById("manual-order-panel").style.display = "none";
+    }
+
+    function submitManualOrder() {
+        var symbol = (document.getElementById("bo-symbol").value || "").trim();
+        var side = document.getElementById("bo-side").value;
+        var price = parseFloat(document.getElementById("bo-price").value) || 0;
+        var volume = parseInt(document.getElementById("bo-volume").value) || 0;
+        var orderType = document.getElementById("bo-type").value;
+
+        if (!symbol) { alert("请输入股票代码"); return; }
+        if (price <= 0) { alert("请输入有效价格"); return; }
+        if (volume <= 0) { alert("请输入有效数量"); return; }
+
+        var sideText = side === "BUY" ? "买入" : "卖出";
+        var msg = sideText + " " + symbol + "\n数量: " + volume + "股\n价格: ¥" + price.toFixed(3)
+                + "\n类型: " + (orderType === "LIMIT" ? "限价单" : "市价单");
+        if (!_brokerConfirm(msg)) return;
+
+        var btn = document.getElementById("bo-submit");
+        btn.disabled = true; btn.textContent = "⏳ 下单中...";
+
+        fetch("/api/broker-order", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ symbol: symbol, side: side, volume: volume, price: price, order_type: orderType }),
+        })
+        .then(r => r.json())
+        .then(result => {
+            btn.disabled = false; btn.textContent = "🏦 确认下单";
+            _showBrokerResult("bo-result", result);
+        })
+        .catch(e => {
+            btn.disabled = false; btn.textContent = "🏦 确认下单";
+            document.getElementById("bo-result").className = "broker-order-result err";
+            document.getElementById("bo-result").textContent = "❌ 请求失败: " + e;
+        });
+    }
+
+    function loadBrokerOrders() {
+        var el = document.getElementById("bo-orders");
+        el.innerHTML = "⏳ 加载中...";
+        fetch("/api/broker-orders")
+        .then(r => r.json())
+        .then(data => {
+            var orders = data.orders || [];
+            if (!orders.length) { el.innerHTML = "<small>暂无委托记录</small>"; return; }
+            var html = '<table class="metrics" style="font-size:12px;"><tr><th>时间</th><th>股票</th><th>方向</th><th>数量</th><th>价格</th><th>状态</th></tr>';
+            orders.forEach(function(o) {
+                var cls = o.side === "BUY" ? "color:#991b1b" : "color:#166534";
+                html += '<tr>'
+                    + '<td>' + (o.created_at || "").slice(0,19) + '</td>'
+                    + '<td>' + (o.symbol||"") + '</td>'
+                    + '<td style="' + cls + ';font-weight:700;">' + (o.side === "BUY" ? "买入" : "卖出") + '</td>'
+                    + '<td>' + (o.volume||0) + '</td>'
+                    + '<td>¥' + (o.price||0).toFixed(3) + '</td>'
+                    + '<td>' + (o.status||"") + '</td>'
+                    + '</tr>';
+            });
+            html += '</table>';
+            el.innerHTML = html;
+        })
+        .catch(e => { el.innerHTML = "❌ " + e; });
+    }
 </script>
 </body>
 </html>
