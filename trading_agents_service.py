@@ -226,7 +226,7 @@ def _instance_key(cfg: dict) -> str:
 # Background worker
 # ---------------------------------------------------------------------------
 
-def _run_job(job_id: str, symbol: str, trade_date: str, config: ToolkitConfig, *, lang: str = "en") -> None:
+def _run_job(job_id: str, symbol: str, trade_date: str, config: ToolkitConfig, *, lang: str = "en", user_id: int = 1) -> None:
     """Execute a TradingAgents analysis in a background thread."""
     from trade_storage import update_ta_job
     from tradingagents.graph.trading_graph import TradingAgentsGraph
@@ -235,6 +235,13 @@ def _run_job(job_id: str, symbol: str, trade_date: str, config: ToolkitConfig, *
         update_ta_job(config, job_id, status="running")
 
         llm_cfg = load_llm_config()
+
+        # Merge per-user LLM overrides
+        from trade_storage import get_user_llm_config
+        user_llm = get_user_llm_config(config, user_id)
+        for k, v in user_llm.items():
+            if v not in (None, ""):
+                llm_cfg[k] = v
 
         # Pre-flight: verify LLM is reachable before spinning up the whole graph
         llm_err = _check_llm_reachable(llm_cfg)
@@ -279,7 +286,7 @@ def _run_job(job_id: str, symbol: str, trade_date: str, config: ToolkitConfig, *
 # Public API
 # ---------------------------------------------------------------------------
 
-def submit_job(config: ToolkitConfig, symbol: str, trade_date: str | None = None, *, lang: str = "en") -> str:
+def submit_job(config: ToolkitConfig, symbol: str, trade_date: str | None = None, *, lang: str = "en", user_id: int = 1) -> str:
     """Fire a TradingAgents analysis job in the background. Returns job_id."""
     from trade_storage import save_ta_job
 
@@ -287,12 +294,12 @@ def submit_job(config: ToolkitConfig, symbol: str, trade_date: str | None = None
         trade_date = date.today().isoformat()
 
     job_id = uuid.uuid4().hex[:8]
-    save_ta_job(config, job_id, symbol, trade_date)
+    save_ta_job(config, job_id, symbol, trade_date, user_id=user_id)
 
     thread = threading.Thread(
         target=_run_job,
         args=(job_id, symbol, trade_date, config),
-        kwargs={"lang": lang},
+        kwargs={"lang": lang, "user_id": user_id},
         daemon=True,
         name=f"ta-{job_id}",
     )
@@ -306,10 +313,10 @@ def get_job(config: ToolkitConfig, job_id: str) -> dict | None:
     return load_ta_job(config, job_id)
 
 
-def get_latest(config: ToolkitConfig, symbol: str) -> dict | None:
+def get_latest(config: ToolkitConfig, symbol: str, *, user_id: int = 1) -> dict | None:
     """Return the most recent completed TA analysis for a symbol."""
     from trade_storage import get_latest_ta_analysis
-    return get_latest_ta_analysis(config, symbol)
+    return get_latest_ta_analysis(config, symbol, user_id=user_id)
 
 
 def reflect(config: ToolkitConfig, realized_pnl_pct: float) -> None:

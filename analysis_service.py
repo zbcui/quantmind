@@ -13,6 +13,20 @@ from config import ToolkitConfig
 from data_sources import load_history, normalize_symbol
 from kronos_engine import load_predictor, predict_future
 from strategy_catalog import evaluate_strategy, get_strategy_definition
+from trade_storage import DEFAULT_USER_ID
+
+
+def _save_df(df: pd.DataFrame, path: Path) -> Path:
+    """Save a DataFrame as Parquet if pyarrow is available, else fall back to CSV."""
+    try:
+        import pyarrow  # noqa: F401
+        parquet_path = path.with_suffix(".parquet")
+        df.to_parquet(parquet_path, index=False, engine="pyarrow")
+        return parquet_path
+    except ImportError:
+        csv_path = path.with_suffix(".csv")
+        df.to_csv(csv_path, index=False)
+        return csv_path
 
 
 def summarize_prediction(
@@ -156,6 +170,8 @@ def run_prediction_analysis(
     device: str,
     strategy_key: str,
     signal_threshold: float,
+    *,
+    user_id: int = DEFAULT_USER_ID,
 ) -> dict:
     normalized_symbol = normalize_symbol(symbol)
     history_df, source_used = load_history(config, normalized_symbol, start, end, source=source)
@@ -165,14 +181,12 @@ def run_prediction_analysis(
     context_df = history_df.tail(lookback).copy()
     pred_df = predict_future(config, context_df, pred_len=pred_len, device=device)
 
-    prefix = config.output_dir / normalized_symbol
-    prediction_csv = prefix.with_name(f"{normalized_symbol}_prediction.csv")
-    history_csv = prefix.with_name(f"{normalized_symbol}_history.csv")
+    out_dir = config.user_output_dir(user_id)
+    prefix = out_dir / normalized_symbol
+    prediction_path = _save_df(pred_df, prefix.with_name(f"{normalized_symbol}_prediction"))
+    history_path = _save_df(history_df, prefix.with_name(f"{normalized_symbol}_history"))
     summary_json = prefix.with_name(f"{normalized_symbol}_summary.json")
     forecast_png = prefix.with_name(f"{normalized_symbol}_forecast.png")
-
-    pred_df.to_csv(prediction_csv, index=False)
-    history_df.to_csv(history_csv, index=False)
 
     summary = summarize_prediction(normalized_symbol, label, context_df, pred_df, source_used)
     recommendation = evaluate_strategy(
@@ -190,8 +204,8 @@ def run_prediction_analysis(
     return {
         "summary": summary,
         "recommendation": recommendation,
-        "prediction_path": prediction_csv,
-        "history_path": history_csv,
+        "prediction_path": prediction_path,
+        "history_path": history_path,
         "summary_path": summary_json,
         "forecast_path": forecast_png,
         "prediction_df": pred_df,
@@ -213,6 +227,8 @@ def run_backtest_analysis(
     source: str,
     device: str,
     strategy_key: str,
+    *,
+    user_id: int = DEFAULT_USER_ID,
 ) -> dict:
     normalized_symbol = normalize_symbol(symbol)
     price_df, source_used = load_history(config, normalized_symbol, start, end, source=source)
@@ -240,13 +256,12 @@ def run_backtest_analysis(
     daily_df["strategy_equity"] = (1.0 + daily_df["strategy_return"]).cumprod()
     daily_df["benchmark_equity"] = (1.0 + daily_df["asset_return"]).cumprod()
 
-    base = config.output_dir / normalized_symbol
-    trades_path = Path(str(base) + "_backtest_trades.csv")
-    daily_path = Path(str(base) + "_backtest_daily.csv")
+    out_dir = config.user_output_dir(user_id)
+    base = out_dir / normalized_symbol
+    trades_path = _save_df(trades_df, Path(str(base) + "_backtest_trades"))
+    daily_path = _save_df(daily_df, Path(str(base) + "_backtest_daily"))
     summary_path = Path(str(base) + "_backtest_summary.json")
 
-    trades_df.to_csv(trades_path, index=False)
-    daily_df.to_csv(daily_path, index=False)
     summary = summarize_backtest(daily_df, trades_df, source_used)
     summary["strategy"] = get_strategy_definition(strategy_key).label
     with open(summary_path, "w", encoding="utf-8") as handle:
@@ -277,6 +292,8 @@ def run_full_analysis(
     source: str,
     device: str,
     strategy_key: str,
+    *,
+    user_id: int = DEFAULT_USER_ID,
 ) -> dict:
     prediction = run_prediction_analysis(
         config=config,
@@ -290,6 +307,7 @@ def run_full_analysis(
         device=device,
         strategy_key=strategy_key,
         signal_threshold=signal_threshold,
+        user_id=user_id,
     )
     backtest = run_backtest_analysis(
         config=config,
@@ -303,5 +321,6 @@ def run_full_analysis(
         source=source,
         device=device,
         strategy_key=strategy_key,
+        user_id=user_id,
     )
     return {"prediction": prediction, "backtest": backtest}

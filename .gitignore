@@ -15,6 +15,7 @@ env/
 
 # Secrets & credentials
 data/llm_config.json
+data/llm_wiki_config.json
 
 # Generated outputs & portfolio state
 outputs/

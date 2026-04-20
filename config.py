@@ -49,6 +49,12 @@ class ToolkitConfig:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.qlib_data_path.mkdir(parents=True, exist_ok=True)
 
+    def user_output_dir(self, user_id: int) -> Path:
+        """Per-user output directory: outputs/{user_id}/"""
+        d = self.output_dir / str(user_id)
+        d.mkdir(parents=True, exist_ok=True)
+        return d
+
     @property
     def paper_state_path(self) -> Path:
         return self.output_dir / "paper_portfolio.json"
@@ -64,3 +70,8 @@ class ToolkitConfig:
     @property
     def live_order_dir(self) -> Path:
         return self.output_dir / "manual_live_orders"
+
+    def user_live_order_dir(self, user_id: int) -> Path:
+        d = self.user_output_dir(user_id) / "manual_live_orders"
+        d.mkdir(parents=True, exist_ok=True)
+        return d

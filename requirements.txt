@@ -1,10 +1,13 @@
 akshare
 einops
 flask==2.3.3
+flask-login>=0.6.3
 matplotlib
 pandas
+pyarrow>=14.0.0
 pyqlib
 torch>=2.0.0
+werkzeug>=2.3.0
 huggingface_hub==0.33.1
 safetensors==0.6.2
 tqdm==4.67.1
