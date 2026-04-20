@@ -25,7 +25,7 @@ def _save_df(df: pd.DataFrame, path: Path) -> Path:
         return parquet_path
     except ImportError:
         csv_path = path.with_suffix(".csv")
-        df.to_csv(csv_path, index=False)
+        df.to_csv(csv_path, index=False, encoding="utf-8-sig")
         return csv_path
 
 
