@@ -236,6 +236,13 @@ def _run_job(job_id: str, symbol: str, trade_date: str, config: ToolkitConfig, *
 
         llm_cfg = load_llm_config()
 
+        # Merge per-user LLM overrides
+        from trade_storage import get_user_llm_config
+        user_llm = get_user_llm_config(config, user_id)
+        for k, v in user_llm.items():
+            if v not in (None, ""):
+                llm_cfg[k] = v
+
         # Pre-flight: verify LLM is reachable before spinning up the whole graph
         llm_err = _check_llm_reachable(llm_cfg)
         if llm_err:
