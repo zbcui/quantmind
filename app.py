@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import os
 import secrets
+from datetime import datetime
 from pathlib import Path
 
 from flask import Flask, jsonify, redirect, render_template, request, send_from_directory, url_for
@@ -454,6 +455,129 @@ def llm_config_api():
     merged.pop("api_key", None)  # never send key back to browser
     merged["has_api_key"] = bool(user_cfg.get("api_key", "").strip())
     return jsonify(merged)
+
+
+# ── Broker config & order execution ────────────────────────────────────
+
+@app.route("/api/broker-config", methods=["GET", "POST"])
+@login_required
+def broker_config_api():
+    config = ToolkitConfig()
+    trade_storage.ensure_storage(config)
+    uid = _uid()
+    if request.method == "POST":
+        try:
+            cfg = request.get_json(silent=True) or {}
+            trade_storage.save_user_broker_config(config, uid, cfg)
+            return jsonify({"ok": True})
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 400
+    broker_cfg = trade_storage.get_user_broker_config(config, uid)
+    return jsonify(broker_cfg)
+
+
+@app.route("/api/broker-order", methods=["POST"])
+@login_required
+def broker_order_api():
+    """Execute a real broker order via MiniQMT."""
+    from broker_service import BrokerConfig, execute_order, OrderSide, OrderType
+
+    config = ToolkitConfig()
+    trade_storage.ensure_storage(config)
+    uid = _uid()
+    payload = request.get_json(silent=True) or {}
+
+    broker_dict = trade_storage.get_user_broker_config(config, uid)
+    broker_cfg = BrokerConfig.from_dict(broker_dict)
+
+    try:
+        symbol = payload.get("symbol", "").strip()
+        side = OrderSide(payload.get("side", "BUY").upper())
+        volume = int(payload.get("volume", 0))
+        price = float(payload.get("price", 0))
+        order_type = OrderType(payload.get("order_type", "LIMIT").upper())
+
+        # Get today's order count for risk check
+        orders_today = trade_storage.get_broker_orders(config, uid, limit=200)
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        daily_count = sum(1 for o in orders_today if o["created_at"].startswith(today_str))
+
+        result = execute_order(
+            broker_cfg, symbol, side, volume, price, order_type,
+            daily_order_count=daily_count,
+        )
+
+        # Record order in DB
+        trade_storage.record_broker_order(config, uid, result)
+        return jsonify(result)
+
+    except Exception as exc:
+        return jsonify({"order_id": None, "status": "FAILED", "message": str(exc)}), 400
+
+
+@app.route("/api/broker-signal", methods=["POST"])
+@login_required
+def broker_signal_api():
+    """Execute a QuantMind signal (BUY/SELL/HOLD) as a real broker order."""
+    from broker_service import BrokerConfig, execute_signal
+
+    config = ToolkitConfig()
+    trade_storage.ensure_storage(config)
+    uid = _uid()
+    payload = request.get_json(silent=True) or {}
+
+    broker_dict = trade_storage.get_user_broker_config(config, uid)
+    broker_cfg = BrokerConfig.from_dict(broker_dict)
+
+    try:
+        symbol = payload.get("symbol", "").strip()
+        action = payload.get("action", "HOLD").upper()
+        price = float(payload.get("price", 0))
+        position_shares = int(payload.get("position_shares", 0))
+        available_cash = float(payload.get("available_cash", 0))
+
+        orders_today = trade_storage.get_broker_orders(config, uid, limit=200)
+        today_str = datetime.now().strftime("%Y-%m-%d")
+        daily_count = sum(1 for o in orders_today if o["created_at"].startswith(today_str))
+
+        result = execute_signal(
+            broker_cfg, symbol, action, price,
+            position_shares=position_shares,
+            available_cash=available_cash,
+            daily_order_count=daily_count,
+        )
+
+        if result.get("order_id"):
+            trade_storage.record_broker_order(config, uid, result)
+        return jsonify(result)
+
+    except Exception as exc:
+        return jsonify({"order_id": None, "status": "FAILED", "message": str(exc)}), 400
+
+
+@app.route("/api/broker-orders")
+@login_required
+def broker_orders_api():
+    """Return recent broker orders for the current user."""
+    config = ToolkitConfig()
+    trade_storage.ensure_storage(config)
+    orders = trade_storage.get_broker_orders(config, _uid())
+    return jsonify({"orders": orders})
+
+
+@app.route("/api/broker-account")
+@login_required
+def broker_account_api():
+    """Query broker account asset and positions."""
+    from broker_service import BrokerConfig, query_account_asset, query_positions
+
+    config = ToolkitConfig()
+    broker_dict = trade_storage.get_user_broker_config(config, _uid())
+    broker_cfg = BrokerConfig.from_dict(broker_dict)
+
+    asset = query_account_asset(broker_cfg)
+    positions = query_positions(broker_cfg)
+    return jsonify({"asset": asset, "positions": positions})
 
 
 @app.route("/api/t0-indicators/<symbol>")

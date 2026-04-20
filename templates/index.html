@@ -557,6 +557,7 @@
             <a href="/portfolio" class="lang-btn" data-i18n="portfolio_btn">Portfolio →</a>
             <button class="lang-btn" id="lang-toggle" onclick="toggleLang()">中文</button>
             <button class="t0-btn-gear" onclick="openSettings()" title="LLM Settings">⚙</button>
+            <button class="t0-btn-gear" onclick="openBrokerModal()" title="Broker Settings">🏦</button>
         </div>
     </div>
     <p class="subtitle" data-i18n="subtitle">Enter a stock code to run forecast, backtest, paper trading, and manual live order export from the browser.</p>
@@ -631,6 +632,48 @@
             <div class="modal-footer">
                 <button class="t0-btn t0-btn-secondary" onclick="closeSettings()" data-i18n="settings_cancel">取消</button>
                 <button class="t0-btn t0-btn-primary" onclick="saveSettings()" data-i18n="settings_save">保存</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Broker Settings Modal -->
+    <div class="modal-backdrop" id="broker-modal">
+        <div class="modal">
+            <h3>🏦 券商交易设置（MiniQMT）</h3>
+            <div style="background:#fef9c3;border:1px solid #fde047;border-radius:6px;padding:8px 10px;font-size:12px;color:#713f12;margin:0 0 10px;">
+                ⚠️ <b>仅限本地部署使用</b>：需在本机安装并启动 MiniQMT 客户端。<br>
+                云端（HF Spaces）模式下此功能不可用。
+            </div>
+            <label>
+                <span style="display:flex;align-items:center;gap:6px;">
+                    <input type="checkbox" id="broker-enabled" style="width:auto;margin:0;">
+                    启用实盘交易
+                </span>
+            </label>
+            <label>券商名称
+                <input id="broker-name" type="text" placeholder="如：国金证券、华泰证券">
+            </label>
+            <label>资金账号
+                <input id="broker-account" type="text" placeholder="券商资金账号">
+            </label>
+            <label>MiniQMT 路径
+                <input id="broker-qmt-path" type="text" placeholder="C:\国金QMT交易端\userdata_mini">
+            </label>
+            <label>单笔最大金额 (¥)
+                <input id="broker-max-value" type="number" value="50000" min="1000" step="1000">
+            </label>
+            <label>每日最大下单次数
+                <input id="broker-max-daily" type="number" value="20" min="1">
+            </label>
+            <label>
+                <span style="display:flex;align-items:center;gap:6px;">
+                    <input type="checkbox" id="broker-confirm" checked style="width:auto;margin:0;">
+                    下单前需要确认
+                </span>
+            </label>
+            <div class="modal-footer">
+                <button class="t0-btn t0-btn-secondary" onclick="closeBrokerModal()">取消</button>
+                <button class="t0-btn t0-btn-primary" onclick="saveBrokerConfig()">保存</button>
             </div>
         </div>
     </div>
@@ -1443,6 +1486,42 @@
         }).then(() => {
             closeSettings();
             alert("✅ Settings saved!");
+        });
+    }
+
+    // ── Broker settings modal ──────────────────────────────────────
+    function openBrokerModal() {
+        fetch("/api/broker-config").then(r => r.json()).then(cfg => {
+            document.getElementById("broker-enabled").checked = !!cfg.enabled;
+            document.getElementById("broker-name").value = cfg.broker_name || "";
+            document.getElementById("broker-account").value = cfg.account_id || "";
+            document.getElementById("broker-qmt-path").value = cfg.mini_qmt_path || "";
+            document.getElementById("broker-max-value").value = cfg.max_order_value || 50000;
+            document.getElementById("broker-max-daily").value = cfg.max_daily_orders || 20;
+            document.getElementById("broker-confirm").checked = cfg.require_confirmation !== false;
+        });
+        document.getElementById("broker-modal").classList.add("open");
+    }
+    function closeBrokerModal() {
+        document.getElementById("broker-modal").classList.remove("open");
+    }
+    function saveBrokerConfig() {
+        const cfg = {
+            enabled: document.getElementById("broker-enabled").checked,
+            broker_name: document.getElementById("broker-name").value.trim(),
+            account_id: document.getElementById("broker-account").value.trim(),
+            mini_qmt_path: document.getElementById("broker-qmt-path").value.trim(),
+            max_order_value: parseFloat(document.getElementById("broker-max-value").value) || 50000,
+            max_daily_orders: parseInt(document.getElementById("broker-max-daily").value) || 20,
+            require_confirmation: document.getElementById("broker-confirm").checked,
+        };
+        fetch("/api/broker-config", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(cfg),
+        }).then(() => {
+            closeBrokerModal();
+            alert("✅ 券商设置已保存！");
         });
     }
 

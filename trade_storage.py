@@ -130,6 +130,23 @@ def ensure_storage(config: ToolkitConfig) -> None:
                 PRIMARY KEY (user_id, symbol),
                 FOREIGN KEY (user_id) REFERENCES users(id)
             );
+
+            CREATE TABLE IF NOT EXISTS broker_orders (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL DEFAULT 1,
+                symbol TEXT NOT NULL,
+                side TEXT NOT NULL,
+                volume INTEGER NOT NULL,
+                price REAL NOT NULL,
+                order_type TEXT NOT NULL DEFAULT 'LIMIT',
+                status TEXT NOT NULL DEFAULT 'PENDING',
+                broker_order_id TEXT,
+                message TEXT,
+                details_json TEXT,
+                created_at TEXT NOT NULL,
+                updated_at TEXT,
+                FOREIGN KEY (user_id) REFERENCES users(id)
+            );
             """
         )
         conn.commit()
@@ -220,6 +237,70 @@ def save_user_llm_config(config: ToolkitConfig, user_id: int, llm_cfg: dict) -> 
         conn.commit()
 
 
+def get_user_broker_config(config: ToolkitConfig, user_id: int) -> dict:
+    """Return the per-user broker config as a dict (empty dict if not set)."""
+    with closing(_connect(config)) as conn:
+        row = conn.execute(
+            "SELECT broker_config_json FROM users WHERE id = ?",
+            (user_id,),
+        ).fetchone()
+        if row and row["broker_config_json"]:
+            try:
+                return json.loads(row["broker_config_json"])
+            except (json.JSONDecodeError, TypeError):
+                pass
+    return {}
+
+
+def save_user_broker_config(config: ToolkitConfig, user_id: int, broker_cfg: dict) -> None:
+    """Persist per-user broker config."""
+    with closing(_connect(config)) as conn:
+        conn.execute(
+            "UPDATE users SET broker_config_json = ? WHERE id = ?",
+            (json.dumps(broker_cfg, ensure_ascii=False), user_id),
+        )
+        conn.commit()
+
+
+def record_broker_order(config: ToolkitConfig, user_id: int, order_result: dict) -> int:
+    """Record a broker order in the database. Returns the row id."""
+    with closing(_connect(config)) as conn:
+        cur = conn.execute(
+            """INSERT INTO broker_orders
+               (user_id, symbol, side, volume, price, order_type, status,
+                broker_order_id, message, details_json, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                user_id,
+                (order_result.get("details") or {}).get("symbol", ""),
+                (order_result.get("details") or {}).get("side", ""),
+                (order_result.get("details") or {}).get("volume", 0),
+                (order_result.get("details") or {}).get("price", 0.0),
+                (order_result.get("details") or {}).get("order_type", "LIMIT"),
+                order_result.get("status", "UNKNOWN"),
+                order_result.get("order_id", ""),
+                order_result.get("message", ""),
+                json.dumps(order_result.get("details") or {}, ensure_ascii=False),
+                order_result.get("timestamp", datetime.now().isoformat()),
+            ),
+        )
+        conn.commit()
+        return cur.lastrowid
+
+
+def get_broker_orders(config: ToolkitConfig, user_id: int, limit: int = 50) -> list[dict]:
+    """Return recent broker orders for a user."""
+    with closing(_connect(config)) as conn:
+        rows = conn.execute(
+            """SELECT id, symbol, side, volume, price, order_type, status,
+                      broker_order_id, message, created_at
+               FROM broker_orders WHERE user_id = ?
+               ORDER BY created_at DESC LIMIT ?""",
+            (user_id, limit),
+        ).fetchall()
+        return [dict(r) for r in rows]
+
+
 # ---------------------------------------------------------------------------
 # Schema migration for existing databases
 # ---------------------------------------------------------------------------
@@ -235,6 +316,7 @@ def _migrate_schema(config: ToolkitConfig) -> None:
             ("live_orders", "user_id", "INTEGER NOT NULL DEFAULT 1"),
             ("ta_analyses", "user_id", "INTEGER NOT NULL DEFAULT 1"),
             ("users", "llm_config_json", "TEXT NOT NULL DEFAULT '{}'"),
+            ("users", "broker_config_json", "TEXT NOT NULL DEFAULT '{}'"),
         ]
         for table, column, col_type in migrations:
             try:
