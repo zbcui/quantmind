@@ -25,6 +25,8 @@ from trading_service import (
 app = Flask(__name__)
 app.config["JSON_AS_ASCII"] = False
 app.secret_key = secrets.token_hex(32)
+app.config["SESSION_COOKIE_SAMESITE"] = "None"
+app.config["SESSION_COOKIE_SECURE"] = True
 
 # ── Flask-Login setup ──────────────────────────────────────────────────
 login_manager = LoginManager()
